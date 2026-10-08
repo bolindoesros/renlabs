@@ -1,0 +1,7 @@
+ultralytics==8.4.174
+open_clip_torch==3.3.0
+torch==2.14.1
+opencv-python==5.0.0.93
+pillow==12.3.0
+numpy==2.5.3
+pytest==9.1.1

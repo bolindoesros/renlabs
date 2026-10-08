@@ -1,0 +1,24 @@
+from dataclasses import dataclass
+from typing import Literal
+
+BoxKind = Literal["person", "head"]
+ClothingLabel = Literal["warm", "light", "unknown"]
+
+
+@dataclass(frozen=True)
+class Box:
+    """Pixel box; x2, y2 are exclusive."""
+
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    confidence: float
+    kind: BoxKind
+
+
+@dataclass(frozen=True)
+class ClothingResult:
+    label: ClothingLabel
+    warm_prob: float | None  # None when label is unknown
+    reason: str  # filled only when unknown
