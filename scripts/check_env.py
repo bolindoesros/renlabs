@@ -13,7 +13,9 @@ from jacket import config
 
 logger = logging.getLogger("check_env")
 
-REQUIRED_PACKAGES = ["ultralytics", "open_clip", "torch", "cv2", "PIL", "numpy", "pytest"]
+REQUIRED_PACKAGES = [
+    "ultralytics", "open_clip", "torch", "cv2", "PIL", "numpy", "pytest", "transformers", "sentencepiece",
+]
 
 
 @dataclass(frozen=True)
@@ -78,8 +80,9 @@ def make_clip_check(model_key: str) -> Callable[[], str]:
         model, _, _ = open_clip.create_model_and_transforms(
             spec.model_name, pretrained=spec.pretrained
         )
+        open_clip.get_tokenizer(spec.model_name)(["tokenizer check"])
         parameter_count = sum(p.numel() for p in model.parameters())
-        return f"{spec.model_name}, {parameter_count / 1e6:.0f}M params"
+        return f"{spec.model_name} + tokenizer, {parameter_count / 1e6:.0f}M params"
 
     return check_clip_weights
 

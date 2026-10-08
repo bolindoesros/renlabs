@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Literal
 
+import numpy as np
+
 BoxKind = Literal["person", "head"]
 ClothingLabel = Literal["warm", "light", "unknown"]
 
@@ -15,6 +17,7 @@ class Box:
     y2: int
     confidence: float
     kind: BoxKind
+    torso_top_y: int | None = None  # pixel row where clothing starts, if known
 
 
 @dataclass(frozen=True)
@@ -22,3 +25,9 @@ class ClothingResult:
     label: ClothingLabel
     warm_prob: float | None  # None when label is unknown
     reason: str  # filled only when unknown
+
+
+@dataclass(frozen=True)
+class CropResult:
+    crop: np.ndarray | None  # BGR uint8, None when unusable
+    reason: str  # filled only when crop is None
