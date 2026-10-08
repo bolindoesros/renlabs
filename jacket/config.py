@@ -81,3 +81,9 @@ CLASSIFY_INTERVAL_SECONDS = 1.0  # CLIP runs per person at most this often
 SMOOTHING_ALPHA = 0.4  # weight of the newest score
 TRACK_MIN_IOU = 0.3  # boxes overlapping less are different people
 TRACK_MAX_MISSING_SECONDS = 2.0  # forget a person after this long unseen
+
+# Eval and crop saving
+EVAL_DIR = DATA_DIR / "eval"  # holds warm/ and light/ subfolders
+RAW_CROPS_DIR = DATA_DIR / "raw"  # --save-crops writes here, sort by hand
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
+SAVE_CROP_INTERVAL_SECONDS = 2.0  # keeps saved crops varied, not near-duplicates
