@@ -56,8 +56,6 @@ DEBUG_FONT_SCALE = 0.6
 # Crop rules
 MIN_CLASSIFY_CONFIDENCE = 0.5  # below this the box is too doubtful to classify
 MIN_CROP_SIDE_PX = 48
-EDGE_MARGIN_PX = 4
-EDGE_SIDES_CHECKED = ("left", "right", "top")  # bottom is cut by desks normally
 PERSON_CROP_HEIGHT_WIDTHS = 0.6  # crop height, in box widths
 HEAD_CROP_GAP_HEADS = 0.1  # gap under the chin, in head heights
 HEAD_CROP_HEIGHT_HEADS = 2.0
@@ -73,8 +71,8 @@ CLASSIFIER_PROMPT_TEMPLATE = "a photo of a person wearing {}"
 WARM_ITEMS = ["a hoodie", "a jacket", "a sweater", "a sweatshirt", "a coat"]
 LIGHT_ITEMS = ["a t-shirt", "a short-sleeved shirt", "a tank top"]
 LOGIT_SCALE = 100.0  # CLIP's usual softmax sharpness
-WARM_THRESHOLD = 0.6  # warm_prob above this is warm
-LIGHT_THRESHOLD = 0.4  # warm_prob below this is light
+WARM_THRESHOLD = 0.55  # warm_prob above this is warm
+LIGHT_THRESHOLD = 0.45  # warm_prob below this is light
 
 # Pipeline
 CLASSIFY_INTERVAL_SECONDS = 1.0  # CLIP runs per person at most this often

@@ -8,21 +8,6 @@ def _unusable(reason: str) -> CropResult:
     return CropResult(crop=None, reason=reason)
 
 
-def _touches_checked_edge(box: Box, frame_height: int, frame_width: int) -> str | None:
-    """Name the first checked frame edge the box touches, else None."""
-    margin = config.EDGE_MARGIN_PX
-    distances = {
-        "left": box.x1,
-        "right": frame_width - box.x2,
-        "top": box.y1,
-        "bottom": frame_height - box.y2,
-    }
-    for side in config.EDGE_SIDES_CHECKED:
-        if distances[side] <= margin:
-            return side
-    return None
-
-
 def _person_region(box: Box, torso_top_y: int) -> tuple[int, int, int, int]:
     """Chest area below the chin or shoulders, sized by box width."""
     width = box.x2 - box.x1
@@ -51,9 +36,6 @@ def crop_torso(frame: np.ndarray, box: Box) -> CropResult:
         return _unusable("empty box")
 
     if box.kind == "person":
-        touched_side = _touches_checked_edge(box, frame_height, frame_width)
-        if touched_side is not None:
-            return _unusable(f"touches {touched_side} edge")
         if box.torso_top_y is None:
             return _unusable("no shoulders or face found")
         x1, y1, x2, y2 = _person_region(box, box.torso_top_y)

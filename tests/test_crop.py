@@ -44,16 +44,9 @@ def test_low_confidence_is_unknown(frame):
     assert "low confidence" in crop_torso(frame, person(200, 100, 400, 400, 0.2)).reason
 
 
-@pytest.mark.parametrize(
-    "box,side",
-    [
-        (person(0, 100, 200, 400), "left"),
-        (person(440, 100, 640, 400), "right"),
-        (person(200, 0, 400, 300), "top"),
-    ],
-)
-def test_person_touching_edge_is_unknown(frame, box, side):
-    assert side in crop_torso(frame, box).reason
+def test_person_at_side_edge_is_cropped_to_visible_part(frame):
+    assert_valid_crop(crop_torso(frame, person(0, 100, 200, 400)))
+    assert_valid_crop(crop_torso(frame, person(440, 100, 640, 400)))
 
 
 def test_person_touching_bottom_is_allowed(frame):

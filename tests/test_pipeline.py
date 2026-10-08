@@ -101,13 +101,13 @@ def test_person_forgotten_after_missing_timeout(pipeline, classifier, clock):
 
 
 def test_unusable_crop_is_unknown_without_classifying(pipeline, classifier):
-    result = pipeline.process(FRAME, [person(0, 100, 200, 400)])[0]  # touches left edge
-    assert result.label == "unknown" and result.warm_prob is None and "left" in result.reason
+    result = pipeline.process(FRAME, [person(300, 200, 330, 240)])[0]  # tiny box
+    assert result.label == "unknown" and result.warm_prob is None and "too small" in result.reason
     assert classifier.calls == 0
 
 
 def test_one_result_per_box_in_order(pipeline):
-    boxes = [person(100, 100, 250, 400), person(0, 100, 150, 400), person(400, 100, 550, 400)]
+    boxes = [person(100, 100, 250, 400), person(300, 200, 330, 240), person(400, 100, 550, 400)]
     labels = [result.label for result in pipeline.process(FRAME, boxes)]
     assert labels == ["warm", "unknown", "warm"]
 
@@ -117,6 +117,6 @@ def test_count_warm_ignores_unknown():
         ClothingResult("warm", 0.9, ""),
         ClothingResult("warm", 0.8, ""),
         ClothingResult("light", 0.1, ""),
-        ClothingResult("unknown", None, "touches left edge"),
+        ClothingResult("unknown", None, "crop too small 30x10"),
     ]
     assert count_warm(results) == (2, 3)
