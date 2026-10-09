@@ -10,6 +10,7 @@ import open_clip
 import torch
 
 from jacket import config
+from jacket.camera import find_camera_index
 
 logger = logging.getLogger("check_env")
 
@@ -47,9 +48,10 @@ def check_torch_device() -> str:
 
 
 def check_webcam() -> str:
-    capture = cv2.VideoCapture(config.CAMERA_INDEX, cv2.CAP_V4L2)
+    camera_index = find_camera_index(config.CAMERA_NAME_HINT)
+    capture = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
     if not capture.isOpened():
-        raise RuntimeError(f"cannot open camera index {config.CAMERA_INDEX}")
+        raise RuntimeError(f"cannot open camera index {camera_index}")
     try:
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
@@ -61,7 +63,7 @@ def check_webcam() -> str:
     finally:
         capture.release()
     height, width = frame.shape[:2]
-    return f"index {config.CAMERA_INDEX}, frame {width}x{height}"
+    return f"index {camera_index}, frame {width}x{height}"
 
 
 def check_yolo_weights() -> str:

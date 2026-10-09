@@ -7,7 +7,7 @@ WEIGHTS_DIR = PROJECT_ROOT / "weights"
 DATA_DIR = PROJECT_ROOT / "data"
 
 # Camera
-CAMERA_INDEX = 2  # C920; index 0 is the laptop webcam
+CAMERA_NAME_HINT = "C920"  # found by name because index numbers shift
 CAMERA_WIDTH = 1280
 CAMERA_HEIGHT = 720
 CAMERA_WARMUP_FRAMES = 5  # first frames are often dark
@@ -35,6 +35,7 @@ CLIP_MODELS: dict[str, ClipModelSpec] = {
     "fashion": ClipModelSpec("hf-hub:Marqo/marqo-fashionSigLIP", None),
 }
 
+DEFAULT_CLIP_MODEL = "fashion"  # beat clip on every test so far
 MIN_PYTHON_VERSION = (3, 10)
 
 # Person detector tuning

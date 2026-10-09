@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from types import TracebackType
 
 import cv2
@@ -9,6 +10,23 @@ logger = logging.getLogger(__name__)
 
 class CameraError(RuntimeError):
     pass
+
+
+def list_cameras() -> dict[int, str]:
+    """Map V4L2 index to device name (Linux). Metadata nodes repeat names."""
+    cameras: dict[int, str] = {}
+    for node in sorted(Path("/sys/class/video4linux").glob("video*")):
+        cameras[int(node.name.removeprefix("video"))] = (node / "name").read_text().strip()
+    return cameras
+
+
+def find_camera_index(name_hint: str) -> int:
+    """Lowest index whose name contains the hint, else raise with the list."""
+    cameras = list_cameras()
+    for index, name in cameras.items():
+        if name_hint.lower() in name.lower():
+            return index
+    raise CameraError(f"no camera named like '{name_hint}'; found {cameras}. Use --camera N")
 
 
 class Camera:

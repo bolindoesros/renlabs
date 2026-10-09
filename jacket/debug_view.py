@@ -1,4 +1,4 @@
-"""Live view. Run: python -m jacket.debug_view --model clip|fashion [--save-crops]"""
+"""Live view. Run: python -m jacket [--model clip|fashion] [--camera N] [--save-crops]"""
 import argparse
 import logging
 import time
@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 from jacket import config
-from jacket.camera import Camera
+from jacket.camera import Camera, find_camera_index
 from jacket.classifier import ClothingClassifier
 from jacket.crop import crop_torso
 from jacket.person_detector import PersonDetector
@@ -106,7 +106,7 @@ def draw_status(frame: np.ndarray, results: list[ClothingResult], fps: float) ->
         )
 
 
-def run(model_key: str, save_crops: bool) -> None:
+def run(model_key: str, save_crops: bool, camera_index: int | None) -> None:
     detector = PersonDetector(
         config.YOLO_WEIGHTS_PATH,
         config.YOLO_PERSON_CLASS_ID,
@@ -123,7 +123,8 @@ def run(model_key: str, save_crops: bool) -> None:
     crop_key_code = ord(config.DEBUG_CROP_KEY)
     show_crops = False
     with Camera(
-        config.CAMERA_INDEX, config.CAMERA_WIDTH, config.CAMERA_HEIGHT,
+        camera_index if camera_index is not None else find_camera_index(config.CAMERA_NAME_HINT),
+        config.CAMERA_WIDTH, config.CAMERA_HEIGHT,
         config.CAMERA_WARMUP_FRAMES,
     ) as camera:
         previous_time = time.perf_counter()
@@ -157,11 +158,16 @@ def run(model_key: str, save_crops: bool) -> None:
     cv2.destroyAllWindows()
 
 
-if __name__ == "__main__":
+def main(default_model: str = config.DEFAULT_CLIP_MODEL) -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", required=True, choices=list(config.CLIP_MODELS))
+    parser.add_argument("--model", choices=list(config.CLIP_MODELS), default=default_model)
+    parser.add_argument("--camera", type=int, help="camera index; default finds the C920 by name")
     parser.add_argument("--save-crops", action="store_true", help="write crops to data/raw/")
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("jacket").setLevel(logging.INFO)  # keep library logs quiet
-    run(args.model, args.save_crops)
+    run(args.model, args.save_crops, args.camera)
+
+
+if __name__ == "__main__":
+    main()
