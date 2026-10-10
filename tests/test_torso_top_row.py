@@ -10,7 +10,7 @@ EYE_X = {"left_eye": 480.0, "right_eye": 440.0}  # 40 px apart
 
 
 def keypoints(**rows: float | None):
-    """Build keypoints from rows by name; None means not detected."""
+    """Build keypoints from named rows; None is missing."""
     names = {
         "nose": config.KEYPOINT_NOSE,
         "left_eye": config.KEYPOINT_LEFT_EYE,

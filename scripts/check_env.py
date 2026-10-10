@@ -90,7 +90,7 @@ def make_clip_check(model_key: str) -> Callable[[], str]:
 
 
 def run_check(name: str, check: Callable[[], str]) -> CheckResult:
-    # Broad catch is deliberate: report every failure, then exit non-zero.
+    # Broad catch on purpose; report every failure
     try:
         detail = check()
     except Exception as error:

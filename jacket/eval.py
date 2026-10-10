@@ -1,4 +1,4 @@
-"""Score labelled crops. Run: python -m jacket.eval [--models clip fashion]"""
+"""Score labelled crops: python -m jacket.eval"""
 import argparse
 import logging
 from dataclasses import dataclass
@@ -35,7 +35,7 @@ class EvalSummary:
 
 
 def load_samples(eval_dir: Path) -> list[Sample]:
-    """Read data/eval/<label>/ folders; fail loudly if one is missing or empty."""
+    """Read the label folders; fail if one is empty."""
     samples: list[Sample] = []
     for label in TRUE_LABELS:
         folder = eval_dir / label

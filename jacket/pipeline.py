@@ -27,12 +27,12 @@ def iou(first: Box, second: Box) -> float:
 
 
 def smooth(previous: float | None, new: float, alpha: float) -> float:
-    """Exponential moving average; the first score is taken as is."""
+    """Exponential moving average; first score taken as is."""
     return new if previous is None else alpha * new + (1 - alpha) * previous
 
 
 def count_warm(results: list[ClothingResult]) -> tuple[int, int]:
-    """Return (warm count, known count); unknown people are left out."""
+    """(warm count, known count); unknown people left out."""
     known = [result for result in results if result.label != "unknown"]
     return sum(result.label == "warm" for result in known), len(known)
 
@@ -54,7 +54,7 @@ class TrackBook:
         self._tracks: list[Track] = []
 
     def match(self, boxes: list[Box], now: float) -> list[Track]:
-        """Return one track per box, in box order; new people get new tracks."""
+        """One track per box, in box order."""
         pairs = sorted(
             (
                 (iou(box, track.box), box_index, track_index)
@@ -88,7 +88,7 @@ class TrackBook:
 
 
 class ClothingPipeline:
-    """Crop, score on a timer, smooth. One ClothingResult per box."""
+    """Crop, score on a timer, smooth."""
 
     def __init__(
         self, classify_crop: CropClassifier, clock: Callable[[], float] = time.monotonic

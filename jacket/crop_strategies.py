@@ -1,4 +1,4 @@
-"""One function per way of finding the torso. Add a strategy here, then register it."""
+"""One function per way to find the torso."""
 from typing import Callable
 
 from jacket import config
@@ -6,14 +6,14 @@ from jacket.types import Box, BoxKind, Region
 
 
 class CropRejected(Exception):
-    """A strategy cannot produce a usable region; the message is the reason."""
+    """A strategy found no usable region."""
 
 
 RegionStrategy = Callable[[Box], Region]
 
 
 def person_region(box: Box) -> Region:
-    """Chest area below the chin or shoulders, sized by box width."""
+    """Chest area below the chin, sized by width."""
     if box.torso_top_y is None:
         raise CropRejected("no shoulders or face found")
     top = box.torso_top_y

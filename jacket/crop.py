@@ -13,7 +13,7 @@ def check_box_usable(box: Box) -> None:
 
 
 def clip_to_frame(region: Region, frame_height: int, frame_width: int) -> Region:
-    """Clip last, so strategies may estimate regions that run off the frame."""
+    """Clip last, so strategies may overshoot the frame."""
     return Region(
         max(region.x1, 0), max(region.y1, 0),
         min(region.x2, frame_width), min(region.y2, frame_height),
@@ -28,7 +28,7 @@ def check_region_big_enough(region: Region) -> None:
 def crop_torso(
     frame: np.ndarray, box: Box, strategies: dict[BoxKind, RegionStrategy] = STRATEGIES
 ) -> CropResult:
-    """Cut the torso for a box using the strategy for its kind, or explain why not."""
+    """Cut the torso, or say why not."""
     if box.kind not in strategies:
         raise KeyError(f"no crop strategy registered for box kind '{box.kind}'")
     try:

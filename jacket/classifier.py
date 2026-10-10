@@ -24,7 +24,7 @@ def prompt_probabilities(
 
 
 def warm_probability(probabilities: torch.Tensor, warm_count: int) -> float:
-    """Warm prompts come first, so their mass is the leading slice."""
+    """Warm prompts come first; sum the leading slice."""
     return float(probabilities[:warm_count].sum())
 
 

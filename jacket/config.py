@@ -1,4 +1,4 @@
-"""All tunable values. Nothing here is read from the environment."""
+"""All tunable values live here."""
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +11,8 @@ CAMERA_NAME_HINT = "C920"  # found by name because index numbers shift
 CAMERA_WIDTH = 1280
 CAMERA_HEIGHT = 720
 CAMERA_WARMUP_FRAMES = 5  # first frames are often dark
+CAMERA_FOURCC = "MJPG"  # raw 720p caps near 10 fps
+CAMERA_FPS = 30
 
 # Person detector
 YOLO_WEIGHTS_PATH = WEIGHTS_DIR / "yolo11n-pose.pt"  # pose model: boxes plus keypoints
@@ -86,3 +88,95 @@ EVAL_DIR = DATA_DIR / "eval"  # holds warm/ and light/ subfolders
 RAW_CROPS_DIR = DATA_DIR / "raw"  # --save-crops writes here, sort by hand
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 SAVE_CROP_INTERVAL_SECONDS = 2.0  # keeps saved crops varied, not near-duplicates
+
+# Overlay drawing (shared by debug view and ren.ui)
+OVERLAY_NEUTRAL_COLOR_BGR = (200, 200, 200)  # detected, not classified
+OVERLAY_LABEL_TEXT_BGR = (255, 255, 255)
+OVERLAY_LABEL_PADDING_PX = 4
+
+# Frame sources other than the camera
+STILL_IMAGE_FPS = 15  # a still image is re-sent at this rate
+
+# Demo window (ren.ui): soft, pastel, Google-style
+UI_APP_NAME = "ren.ui"
+UI_WINDOW_TITLE = "ren.ui"
+UI_START_SIZE = (1360, 820)
+UI_MIN_SIZE = (1100, 700)
+UI_SHUTDOWN_WAIT_MS = 10000  # a model load cannot be interrupted
+UI_SIGNAL_TICK_MS = 200  # lets Python handle Ctrl+C while Qt runs
+UI_FONT_FILE = PROJECT_ROOT / "ren" / "assets" / "fonts" / "GoogleSans-VariableFont.ttf"
+UI_TEXT_FONT = "Google Sans"
+UI_MONO_FONTS = ["Google Sans Mono", "Roboto Mono", "Ubuntu Sans Mono", "DejaVu Sans Mono", "monospace"]
+UI_WEIGHT = {"regular": 400, "medium": 500, "bold": 700}
+UI_COLORS = {
+    "page": "#f6f8fc",  # behind the cards
+    "background": "#ffffff",  # card surface
+    "text": "#1f1f1f",
+    "label": "#444746",
+    "muted": "#747775",
+    "hairline": "#e3e7ed",
+    "hover": "#eef2f8",
+    "chip": "#edf1f7",  # dropdowns and buttons
+    "accent": "#0b57d0",
+    "accent_soft": "#d3e3fd",  # active nav pill, switch track
+    "switch": "#c9ced6",
+    "error": "#b3261e",
+    "viewport": "#f1f3f6",  # behind the camera picture
+    "air": "#81c995",  # airflow and live dots
+    "shadow": "#1f3b6b",  # tint for soft shadows
+}
+UI_BRAND_DOTS = ("#8ab4f8", "#f28b82", "#fdd663", "#81c995")  # pastel Google four
+UI_RADIUS = {"card": 20, "viewport": 14, "box": 0, "tag": 2}  # boxes stay square
+UI_FONT_PX = {"body": 17, "small": 14, "mono": 14, "title": 22, "brand": 28, "headline": 21, "tag": 12}
+UI_PAGE_PADDING_PX = 28
+UI_CARD_MARGIN_PX = 10  # room for the card shadow
+UI_PANEL_HEADER_PX = 52
+UI_ROW_HEIGHT_PX = 56
+UI_BOX_LINE_PX = 2.0
+UI_BOX_HALO_PX = 4.5  # white halo, visible on dark footage
+UI_TAG_PADDING_PX = (8, 3)  # horizontal, vertical
+UI_CROP_STRIP_HEIGHT_PX = 88
+UI_CROP_GAP_PX = 14  # between the video and the crop strip
+UI_LIVE_TIMEOUT_S = 1.5  # a panel's dot greys out after this
+
+# Seating plan, back row at the top
+PLAN_ROWS = 3
+PLAN_COLS = 6
+# Corners as frame fractions, back-left clockwise
+PLAN_CORNERS = ((0.10, 0.22), (0.90, 0.22), (0.97, 0.92), (0.03, 0.92))
+PLAN_SEAT_MATCH_RADIUS = 1.0  # in seat widths; farther people are off-plan
+PLAN_ANCHOR_FALLBACK = 0.30  # shoulder row guess, as fraction of box height
+PLAN_ZONE_ROWS = 2
+PLAN_ZONE_COLS = 3
+
+# Seat colours; hot wants cooling
+SEAT_COLORS = {"hot": "#f28b82", "cold": "#8ab4f8", "unsure": "#fdd663"}  # pastel Google
+
+# Decision: how much each seat state wants air
+NEED_HOT = 1.0
+NEED_UNSURE = 0.5
+NEED_COLD = 0.15
+DECISION_SMOOTHING_S = 1.5  # seat demand averaging time
+DECISION_MIN_SHARE = 0.10  # zones below this share are skipped
+DECISION_MIN_DWELL_S = 6.0  # vent stays on a zone at least this long
+DECISION_CLOSE_BELOW = 0.5  # warm-bodied demand below this shuts the vent
+DECISION_AIM_MODE = "sweep"  # sweep shares time; focus holds top zone
+DECISION_FOCUS_MARGIN = 0.15  # focus mode: switch only if clearly better
+
+# Vent geometry (ceiling mounted); angles follow the MAEverick design
+VENT_U = 0.5  # plan position, 0 left to 1 right
+VENT_V = 0.5  # plan position, 0 front to 1 back
+VENT_DROP_M = 2.0  # ceiling to head height
+VENT_TILT_MAX_DEG = 45.0  # flap tilt range is -45 to +45
+VENT_CLOSED_TILT_DEG = 90.0  # flaps shut
+VENT_ROTATION_OFFSET_DEG = 0.0  # zero is toward the back row
+VENT_CLOCKWISE = True  # positive rotation turns clockwise from above
+VENT_SLEW_DEG_PER_S = 60.0
+VENT_TURN_START_DEG = 20.0  # bigger turns shut the flaps first
+VENT_TURN_DONE_DEG = 3.0  # turn counts as finished within this
+VENT_SETTLED_TILT_DEG = 2.0  # tilt within this counts as aimed
+SEAT_WIDTH_M = 0.55
+ROW_DEPTH_M = 0.80
+
+# Saved app settings (gitignored with data/)
+SETTINGS_FILE = DATA_DIR / "settings.json"

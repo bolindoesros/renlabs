@@ -1,4 +1,4 @@
-"""Live view. Run: python -m jacket [--model clip|fashion] [--camera N] [--save-crops]"""
+"""Live debug view. Run: python -m jacket"""
 import argparse
 import logging
 import time
@@ -14,50 +14,15 @@ from jacket.camera import Camera, find_camera_index
 from jacket.classifier import ClothingClassifier
 from jacket.crop import crop_torso
 from jacket.person_detector import PersonDetector
-from jacket.pipeline import ClothingPipeline, count_warm
-from jacket.types import Box, ClothingResult, CropResult
+from jacket.overlay import build_crop_strip, draw_box, group_text
+from jacket.pipeline import ClothingPipeline
+from jacket.types import ClothingResult, CropResult
 
 logger = logging.getLogger("jacket.debug_view")  # explicit: __name__ is __main__ under -m
 
 
-def draw_box(frame: np.ndarray, box: Box, result: ClothingResult) -> None:
-    color = config.DEBUG_LABEL_COLORS_BGR[result.label]
-    cv2.rectangle(
-        frame, (box.x1, box.y1), (box.x2, box.y2), color, config.DEBUG_BOX_THICKNESS,
-    )
-    if box.torso_top_y is not None:
-        cv2.line(frame, (box.x1, box.torso_top_y), (box.x2, box.torso_top_y), color, 1)
-    label = f"{box.kind} {box.confidence:.2f} {result.label}"
-    if result.warm_prob is not None:
-        label += f" {result.warm_prob:.2f}"
-    if result.reason:
-        label += f": {result.reason}"
-    text_y = max(box.y1 - 6, 14)  # keep label on screen
-    cv2.putText(
-        frame, label, (box.x1, text_y), cv2.FONT_HERSHEY_SIMPLEX,
-        config.DEBUG_FONT_SCALE, color, config.DEBUG_BOX_THICKNESS,
-    )
-
-
-def build_crop_strip(crop_results: list[CropResult]) -> np.ndarray:
-    """Place all usable crops side by side at one height."""
-    height = config.DEBUG_CROP_STRIP_HEIGHT_PX
-    crops = [result.crop for result in crop_results if result.crop is not None]
-    if not crops:
-        placeholder = np.zeros((height, 2 * height, 3), dtype=np.uint8)
-        cv2.putText(placeholder, "no usable crops", (10, height // 2),
-                    cv2.FONT_HERSHEY_SIMPLEX, config.DEBUG_FONT_SCALE,
-                    (255, 255, 255), config.DEBUG_BOX_THICKNESS)
-        return placeholder
-    resized = []
-    for crop in crops:
-        width = max(1, round(crop.shape[1] * height / crop.shape[0]))
-        resized.append(cv2.resize(crop, (width, height)))
-    return np.hstack(resized)
-
-
 class CropSaver:
-    """Writes usable crops to disk, at most once per interval."""
+    """Writes usable crops to disk, rate limited."""
 
     def __init__(
         self, output_dir: Path, interval_seconds: float,
@@ -85,13 +50,6 @@ class CropSaver:
         self._last_saved_at = now
         logger.info("saved %d crop(s) to %s", len(paths), self._output_dir)
         return paths
-
-
-def group_text(results: list[ClothingResult]) -> str:
-    warm_count, known_count = count_warm(results)
-    if known_count == 0:
-        return "no visible people classified"
-    return f"{warm_count} of {known_count} visible people warm"
 
 
 def draw_status(frame: np.ndarray, results: list[ClothingResult], fps: float) -> None:

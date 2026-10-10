@@ -7,3 +7,4 @@ numpy==2.5.3
 pytest==9.1.1
 transformers==5.19.0
 sentencepiece==0.2.2
+PySide6-Essentials==6.12.0

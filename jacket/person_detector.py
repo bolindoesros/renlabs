@@ -19,7 +19,7 @@ def _is_confident(keypoints_conf: np.ndarray, *indices: int) -> bool:
 def torso_top_row(
     keypoints_xy: np.ndarray, keypoints_conf: np.ndarray, box_top: int, box_bottom: int
 ) -> int | None:
-    """Row where clothing starts: lower of shoulder line and chin estimate."""
+    """Row where clothing starts: shoulders or chin."""
     candidates: list[float] = []
     left_shoulder, right_shoulder = config.KEYPOINT_LEFT_SHOULDER, config.KEYPOINT_RIGHT_SHOULDER
     shoulder_rows = [

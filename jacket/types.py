@@ -43,7 +43,7 @@ class CropResult:
 
 @dataclass(frozen=True)
 class Region:
-    """Pixel rectangle; x2, y2 are exclusive. May extend past the frame."""
+    """Pixel rectangle, exclusive end; may leave the frame."""
 
     x1: int
     y1: int
