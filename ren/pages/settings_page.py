@@ -10,7 +10,9 @@ from ren.seating_view import SeatingPlanView
 from ren.settings import AppSettings, add_venue, get_path, remove_venue, replace_path, select_venue
 from ren.theme import Fonts
 from ren.venue_list import VenueList
-from ren.widgets import Card, Hairline, NavLink, SettingRow, Stepper, SwitchRow, TextButton, make_dropdown
+from ren.widgets import (
+    Card, Hairline, NavLink, SettingRow, Stepper, SwitchRow, TextButton, make_dropdown, on_key_chosen, select_key,
+)
 
 RESET_ARMED_MS = 3000
 SECTION_WIDTH_PX = 620
@@ -41,6 +43,7 @@ class DropdownRow:
     label: str
     path: Path
     options: tuple[str, ...]
+    labels: dict[str, str] | None = None  # shown instead of the stored keys
 
 
 @dataclass(frozen=True)
@@ -60,9 +63,9 @@ ROOM_SECTIONS = ("seating plan", "vent")  # edit the venue in use
 SECTIONS: dict[str, list] = {
     VENUES_SECTION: [],
     "vision": [
-        DropdownRow("model", ("view", "model_key"), tuple(config.CLIP_MODELS)),
+        DropdownRow("model", ("view", "model_key"), tuple(config.CLIP_MODELS), config.CLIP_MODEL_NAMES),
         ToggleRow("human detection", ("view", "detect_people")),
-        DropdownRow("detector", ("view", "detector"), config.DETECTOR_MODES),
+        DropdownRow("detector", ("view", "detector"), config.DETECTOR_MODES, config.DETECTOR_NAMES),
         ToggleRow("clothing detection", ("view", "classify_clothing")),
         ToggleRow("mirror camera", ("view", "mirror")),
     ],
@@ -74,9 +77,9 @@ SECTIONS: dict[str, list] = {
     ],
     "decision": [
         DropdownRow("aim mode", ("decision", "aim_mode"), ("sweep", "focus")),
-        StepperRow("hot seat need", ("decision", "weights", "hot"), 0, 1, 0.05, 2),
-        StepperRow("unsure seat need", ("decision", "weights", "unsure"), 0, 1, 0.05, 2),
-        StepperRow("cold seat need", ("decision", "weights", "cold"), 0, 1, 0.05, 2),
+        StepperRow("air for needs air", ("decision", "weights", "hot"), 0, 1, 0.05, 2),
+        StepperRow("air for maybe", ("decision", "weights", "unsure"), 0, 1, 0.05, 2),
+        StepperRow("air for fine", ("decision", "weights", "cold"), 0, 1, 0.05, 2),
         StepperRow("time per zone", ("decision", "min_dwell_s"), 0, 60, 1, 0, " s"),
         StepperRow("shut vent below", ("decision", "close_below"), 0, 10, 0.25, 2, " people"),
     ],
@@ -204,9 +207,9 @@ class SettingsPage(QWidget):
         return SettingRow(row.label, stepper, self._fonts)
 
     def _dropdown(self, row: DropdownRow) -> QWidget:
-        box: QComboBox = make_dropdown(list(row.options), get_path(self._settings, row.path))
-        box.textActivated.connect(lambda value: self._edit(row.path, value))
-        self._refreshers.append(lambda s: self._quietly(box, lambda: box.setCurrentText(get_path(s, row.path))))
+        box: QComboBox = make_dropdown(list(row.options), get_path(self._settings, row.path), row.labels)
+        on_key_chosen(box, lambda value: self._edit(row.path, value))
+        self._refreshers.append(lambda s: select_key(box, get_path(s, row.path)))
         return SettingRow(row.label, box, self._fonts)
 
     def _seat_map(self, row: SeatMapRow) -> QWidget:

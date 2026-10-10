@@ -38,7 +38,7 @@ def test_panel_items_are_exactly_the_three_panels():
 
 
 def test_ticks_start_from_the_settings(fonts):
-    toolbar = Toolbar(fonts, "clip", ViewSettings(show_labels=False, show_torso_line=True), ["lt1"], "lt1")
+    toolbar = Toolbar(fonts, "clip", ViewSettings(model_key="clip", show_labels=False, show_torso_line=True), ["lt1"], "lt1")
     assert not toolbar.action("show_labels").isChecked() and toolbar.action("show_torso_line").isChecked()
     assert toolbar.action("camera").isChecked() and toolbar.model() == "clip"
 
@@ -75,7 +75,7 @@ def test_quiet_updates_do_not_announce(toolbar):
 def test_choosing_a_model_announces_it(toolbar):
     chosen = []
     toolbar.model_chosen.connect(chosen.append)
-    toolbar._model.textActivated.emit("clip")
+    toolbar._model.activated.emit(toolbar._model.findData("clip"))
     assert chosen == ["clip"]
 
 

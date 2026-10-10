@@ -7,18 +7,18 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 from jacket import config
 from jacket.types import Box, ClothingResult
 from ren.engine import FrameResult, ViewSettings
-from ren.plan import LABEL_TO_STATE, Line
+from ren.plan import Line
 from ren.theme import Fonts, color, label_color, label_line, rounded
 
 
 def tag_text(box: Box, result: ClothingResult | None) -> str:
-    """Tag words: hot, cold or unsure, plus confidence."""
+    """Tag words: what the person wears (shirt, jacket or unsure), plus confidence."""
     if result is None:
         return f"person {box.confidence:.0%}"
-    state = LABEL_TO_STATE[result.label]
-    if state == "unsure" or result.warm_prob is None:
-        return state
-    return f"{state} {max(result.warm_prob, 1 - result.warm_prob):.0%}"
+    name = config.CLOTHING_NAMES[result.label]
+    if result.label == "unknown" or result.warm_prob is None:
+        return name
+    return f"{name} {max(result.warm_prob, 1 - result.warm_prob):.0%}"
 
 
 def to_qimage(frame_bgr: np.ndarray) -> QImage:

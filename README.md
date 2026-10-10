@@ -15,6 +15,12 @@
     python -m ren.ui --detector both
     python -m jacket.fashion --detector head
 
+    < UI: data page >
+    python -m ren.ui
+    drop a photo anywhere on the window: everyone in it is labelled on the live page
+    torso crops panel, "save crops": saves what is shown to data/raw/
+    data page: drag crops onto warm / light / discard (data/eval/warm, data/eval/light, data/discarded)
+
     < crops >
     python -m jacket.fashion --save-crops
 

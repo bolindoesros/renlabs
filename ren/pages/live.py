@@ -1,5 +1,6 @@
 """The demo page: toolbar, then the panels."""
 import logging
+from dataclasses import replace
 import time
 from typing import Callable
 
@@ -14,8 +15,8 @@ from ren.plan import grid_lines, make_zones, read_scene
 from ren.plan_panel import PlanPanel, status_text
 from ren.settings import AppSettings, replace_path, select_venue
 from ren.theme import Fonts
-from ren.toolbar import Toolbar
-from ren.crops_view import CropsView
+from ren.toolbar import NONE, Toolbar
+from ren.crops_view import CropsPanel
 from ren.video_view import VideoView
 
 logger = logging.getLogger("ren.live")
@@ -39,7 +40,7 @@ class LivePage(QWidget):
 
         self._camera = VideoView(fonts)
         self._plan_panel = PlanPanel(fonts)
-        self._crops = CropsView(fonts)
+        self._crops = CropsPanel(fonts)
         self._area = PanelArea(fonts)
         self._area.add_panel("camera", "camera", self._camera)
         self._area.add_panel("plan", "seating plan", self._plan_panel)
@@ -55,8 +56,8 @@ class LivePage(QWidget):
 
         self._toolbar.venue_chosen.connect(lambda name: self.changed.emit(select_venue(self._settings, name)))
         self._toolbar.venue_add_requested.connect(self.venue_add_requested)
-        self._toolbar.model_chosen.connect(lambda key: self._edit(("view", "model_key"), key))
-        self._toolbar.detector_chosen.connect(lambda mode: self._edit(("view", "detector"), mode))
+        self._toolbar.model_chosen.connect(self._choose_model)
+        self._toolbar.detector_chosen.connect(self._choose_detector)
         self._toolbar.layer_toggled.connect(lambda key, shown: self._edit(("view", key), shown))
         self._toolbar.panel_toggled.connect(self._area.set_visible)
         self._area.changed.connect(self._sync_panels)
@@ -96,8 +97,6 @@ class LivePage(QWidget):
         previous, self._settings = self._settings, settings
         self._camera.set_layers(settings.view)
         self._toolbar.set_view(settings.view)
-        self._toolbar.set_model(settings.view.model_key)
-        self._toolbar.set_detector(settings.view.detector)
         self._toolbar.set_venues(settings.venue_names(), settings.venue)
         self._area.set_visible("crops", settings.view.show_crops)  # remembered between runs
         self._plan_panel.set_weights(settings.decision.weights)
@@ -164,6 +163,15 @@ class LivePage(QWidget):
         self._area.dot("plan").set_state("idle")
 
     # --- toolbar ----------------------------------------------------------------
+
+    def _choose_detector(self, mode: str) -> None:
+        """NONE switches detection off but remembers the last detector."""
+        on = {"detect_people": False} if mode == NONE else {"detect_people": True, "detector": mode}
+        self.changed.emit(replace(self._settings, view=replace(self._settings.view, **on)))
+
+    def _choose_model(self, key: str) -> None:
+        on = {"classify_clothing": False} if key == NONE else {"classify_clothing": True, "model_key": key}
+        self.changed.emit(replace(self._settings, view=replace(self._settings.view, **on)))
 
     def _edit(self, path: tuple[str, ...], value) -> None:
         self.changed.emit(replace_path(self._settings, path, value))

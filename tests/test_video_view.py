@@ -113,11 +113,11 @@ def test_message_replaces_the_picture(fonts):
     assert view.message() == "no video" and not render(view).isNull()
 
 
-def test_tag_words_are_hot_cold_or_unsure():
+def test_tag_words_name_the_clothing():
     from ren.video_view import tag_text
     box = Box(0, 0, 10, 10, 0.86, "person")
-    assert tag_text(box, ClothingResult("light", 0.08, "")) == "hot 92%"
-    assert tag_text(box, ClothingResult("warm", 0.97, "")) == "cold 97%"
+    assert tag_text(box, ClothingResult("light", 0.08, "")) == "shirt 92%"
+    assert tag_text(box, ClothingResult("warm", 0.97, "")) == "jacket 97%"
     assert tag_text(box, ClothingResult("unknown", 0.5, "between")) == "unsure"
     assert tag_text(box, None) == "person 86%"
 

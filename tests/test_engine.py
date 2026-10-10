@@ -53,7 +53,7 @@ def settings(**changes) -> ViewSettings:
 def test_everything_on_classifies_and_summarizes(engine):
     result = engine.process(FRAME, settings())
     assert len(result.boxes) == 1 and result.results[0].label == "warm"
-    assert (result.headline, result.caption) == ("1 of 1", "visible people warm")
+    assert (result.headline, result.caption) == ("1 of 1", "visible people in jackets")
 
 
 def test_detection_off_skips_detector_and_classifier(engine, detector, classifiers):

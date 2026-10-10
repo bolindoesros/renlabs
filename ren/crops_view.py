@@ -4,12 +4,15 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFontMetrics, QImage, QPainter
-from PySide6.QtWidgets import QSizePolicy, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from jacket import config
+from jacket.types import CropResult
+from ren import dataset
 from ren.engine import FrameResult
 from ren.theme import Fonts, color, label_color, rounded
 from ren.video_view import fit_rect, tag_text, to_qimage
+from ren.widgets import TextButton
 
 TILE_GAP_PX = 12
 CAPTION_PX = 30  # tag row under each crop
@@ -117,3 +120,39 @@ class CropsView(QWidget):
         painter.drawRoundedRect(tag, config.UI_RADIUS["tag"], config.UI_RADIUS["tag"])
         painter.setPen(color("text"))
         painter.drawText(tag, Qt.AlignmentFlag.AlignCenter, text)
+
+
+class CropsPanel(QWidget):
+    """The crops, plus a button that saves them for sorting on the data page."""
+
+    def __init__(self, fonts: Fonts) -> None:
+        super().__init__()
+        self.view = CropsView(fonts)
+        self._crops: tuple[CropResult, ...] = ()
+        self.save_button = TextButton("save", fonts)
+        self.save_button.setToolTip("save every crop shown, to sort on the data page")
+        self.save_button.clicked.connect(self.save)
+        self.status = QLabel()
+        self.status.setFont(fonts.text(config.UI_FONT_PX["small"]))
+        self.status.setStyleSheet(f"color: {config.UI_COLORS['muted']};")
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 8, 0, 0)
+        footer.addWidget(self.save_button)
+        footer.addWidget(self.status, 1)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.view, 1)
+        layout.addLayout(footer)
+
+    def show_result(self, result: FrameResult) -> None:
+        self._crops = result.crops
+        self.view.show_result(result)
+
+    def show_message(self, text: str) -> None:
+        self._crops = ()
+        self.view.show_message(text)
+
+    def save(self) -> list:
+        paths = dataset.save_snapshot(self._crops)
+        self.status.setText(f"saved {len(paths)}" if paths else "nothing to save")
+        return paths

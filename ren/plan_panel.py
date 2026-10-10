@@ -5,12 +5,12 @@ from PySide6.QtWidgets import QLabel, QSizePolicy, QStackedWidget, QVBoxLayout, 
 from jacket import config
 from ren.decision import Decision, NeedWeights, VentSettings
 from ren.engine import ViewSettings
-from ren.plan import PlanLayout, SeatingScene, Zone
+from ren.plan import NEED_NAMES, PlanLayout, SeatingScene, Zone
 from ren.seating_view import SeatingPlanView
 from ren.theme import Fonts
 from ren.widgets import TextButton, Legend
 
-RULE_TIP = "t-shirt is hot and gets air, hoodie is cold and gets less"
+RULE_TIP = "people in shirts need air; people in jackets are fine and get less"
 PHASE_VERBS = {"turning": "turning to", "opening": "opening towards", "aiming": "aiming at"}
 
 
@@ -23,7 +23,7 @@ def status_text(decision: Decision, scene: SeatingScene, people: int) -> str:
     outside = f", {scene.off_plan} outside the plan" if scene.off_plan else ""
     if decision.closed:
         everyone_cold = all(reading.state == "cold" for reading in scene.seats.values())
-        reason = "everyone seated is dressed warm" if everyone_cold else "nobody needs cooling"
+        reason = "everyone seated is in a jacket" if everyone_cold else "nobody needs air"
         return f"vent shut, {reason}{outside}"
     text = f"{PHASE_VERBS.get(decision.phase, 'aiming at')} {decision.target_zone}"
     if not decision.reachable:
@@ -32,7 +32,7 @@ def status_text(decision: Decision, scene: SeatingScene, people: int) -> str:
 
 
 def legend_entries(weights: NeedWeights) -> list[tuple[str, str]]:
-    return [(state, f"{state} {getattr(weights, state):g}") for state in ("hot", "unsure", "cold")]
+    return [(state, f"{NEED_NAMES[state]} {getattr(weights, state):g}") for state in ("hot", "unsure", "cold")]
 
 
 def shrinkable(label: QLabel) -> QLabel:

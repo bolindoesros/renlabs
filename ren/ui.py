@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable, ContextManager
 
 import cv2
+import numpy as np
 
 # cv2's Qt5 plugin path breaks PySide6
 for _name in ("QT_QPA_PLATFORM_PLUGIN_PATH", "QT_QPA_FONTDIR"):
@@ -29,19 +30,21 @@ from jacket.pipeline import ClothingPipeline  # noqa: E402
 from jacket.sources import FrameSource, ImageSource, VideoFileSource  # noqa: E402
 from ren.engine import FrameEngine, FrameResult, ViewSettings  # noqa: E402
 from ren.pages.calibration import CalibrationPage  # noqa: E402
+from ren.pages.data_page import DataPage, image_paths  # noqa: E402
 from ren.pages.live import LivePage  # noqa: E402
 from ren.pages.settings_page import SettingsPage  # noqa: E402
 from ren.plan import Calibration  # noqa: E402
 from ren.settings import AppSettings, add_venue, load_settings, replace_path, sanitize, save_settings  # noqa: E402
 from ren.venues import suggest_name  # noqa: E402
 from ren.theme import Fonts, build_stylesheet, load_fonts  # noqa: E402
-from ren.widgets import DotMark, NavChoice  # noqa: E402
+from ren.widgets import DotMark, NavChoice, TextButton  # noqa: E402
 
 logger = logging.getLogger("ren.ui")
 
 SourceFactory = Callable[[], ContextManager[FrameSource]]
-LIVE, SETTINGS, CALIBRATE = range(3)
-NAV_PAGES = ["live", "settings"]
+LIVE, SETTINGS, CALIBRATE, DATA = range(4)
+NAV_PAGES = {"live": LIVE, "data": DATA, "settings": SETTINGS}
+STILL_POLL_S = 0.1  # how often a stopped worker checks for a dropped photo
 
 
 class FrameWorker(QThread):
@@ -56,43 +59,65 @@ class FrameWorker(QThread):
         self._open_source = open_source
         self._engine = engine
         self._settings = settings
+        self._still: np.ndarray | None = None  # a dropped photo, shown instead of the source
         self._stop_requested = False
+        self._warm_up_due = True
+        self._previous = time.perf_counter()
 
     def set_settings(self, settings: ViewSettings) -> None:
         self._settings = settings  # replacing one reference is atomic
+
+    def show_still(self, image: np.ndarray | None) -> None:
+        """Process this photo instead of the source; None goes back to the source."""
+        self._still = image
 
     def stop(self) -> None:
         self._stop_requested = True
 
     def run(self) -> None:
-        # Broad catch on purpose; dead threads look frozen
+        while not self._stop_requested:
+            if self._still is not None:
+                self._run_still()
+                continue
+            # Broad catch on purpose; dead threads look frozen
+            try:
+                with self._open_source() as source:
+                    while not self._stop_requested and self._still is None:
+                        self._process(source.read())
+            except Exception as error:
+                logger.exception("worker stopped")
+                self.failed.emit(f"{type(error).__name__}: {error}")
+                while not self._stop_requested and self._still is None:  # a dropped photo still works
+                    time.sleep(STILL_POLL_S)
+
+    def _run_still(self) -> None:
         try:
-            with self._open_source() as source:
-                self._load_if_needed(self._settings)
-                previous = time.perf_counter()
-                warm_up_due = True
-                while not self._stop_requested:
-                    frame = source.read()
-                    settings = self._settings
-                    self._load_if_needed(settings)
-                    result = self._engine.process(frame, settings)
-                    now = time.perf_counter()
-                    self.frame_ready.emit(result, 1 / max(now - previous, 1e-6))
-                    previous = now
-                    if warm_up_due:  # after the first frame, so the picture shows at once
-                        warm_up_due = False
-                        self._warm_up_detectors()
+            while not self._stop_requested and (still := self._still) is not None:
+                self._process(still.copy())
+                time.sleep(1 / config.STILL_IMAGE_FPS)
         except Exception as error:
-            logger.exception("worker stopped")
+            logger.exception("photo failed")
             self.failed.emit(f"{type(error).__name__}: {error}")
+            self._still = None
+
+    def _process(self, frame: np.ndarray) -> None:
+        settings = self._settings
+        self._load_if_needed(settings)
+        result = self._engine.process(frame, settings)
+        now = time.perf_counter()
+        self.frame_ready.emit(result, 1 / max(now - self._previous, 1e-6))
+        self._previous = now
+        if self._warm_up_due and settings.detect_people:  # after the first frame, so the picture shows at once
+            self._warm_up_due = False
+            self._warm_up_detectors()
 
     def _load_if_needed(self, settings: ViewSettings) -> None:
         if settings.detect_people and not self._engine.detector_loaded(settings.detector):
-            self.status.emit(f"loading {settings.detector} detector...")
+            self.status.emit(f"loading {config.DETECTOR_NAMES[settings.detector]}...")
             self._engine.load_detector(settings.detector)
             self.status.emit("")
         if settings.detect_people and settings.classify_clothing and not self._engine.is_loaded(settings.model_key):
-            self.status.emit(f"loading {settings.model_key} model...")
+            self.status.emit(f"loading {config.CLIP_MODEL_NAMES[settings.model_key]}...")
             self._engine.load(settings.model_key)
             self.status.emit("")
 
@@ -113,6 +138,7 @@ class MainWindow(QWidget):
     ) -> None:
         super().__init__()
         self._worker, self._settings, self._fonts, self._save = worker, settings, fonts, save
+        self._photo: str | None = None  # name of the photo shown instead of the camera
         self._ask_name = ask_name or self._ask_name_dialog
         self.setWindowTitle(config.UI_WINDOW_TITLE)
         self.resize(*config.UI_START_SIZE)
@@ -123,9 +149,11 @@ class MainWindow(QWidget):
         self._settings_page = SettingsPage(fonts, settings)
         self._calibration = CalibrationPage(fonts, settings.calibration, settings.layout)
         self._calibration.set_venue(settings.venue)
+        self._data = DataPage(fonts)
         self._pages = QStackedWidget()
-        for page in (self._live, self._settings_page, self._calibration):
+        for page in (self._live, self._settings_page, self._calibration, self._data):
             self._pages.addWidget(page)
+        self.setAcceptDrops(True)  # a photo dropped anywhere is classified
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -139,14 +167,16 @@ class MainWindow(QWidget):
         self._settings_page.calibrate_requested.connect(lambda: self._open(CALIBRATE))
         self._calibration.changed.connect(self._on_calibration)
         self._calibration.finished.connect(lambda: self._open(SETTINGS))
+        self._data.photo_chosen.connect(self.show_photo)
         worker.frame_ready.connect(self._show_frame)
-        worker.status.connect(self._status.setText)
+        worker.status.connect(self._on_status)
         worker.failed.connect(self._show_failure)
 
         QShortcut(QKeySequence("Q"), self, activated=self.close)
         QShortcut(QKeySequence("Esc"), self, activated=self._back)
         QShortcut(QKeySequence("1"), self, activated=lambda: self._open(LIVE))
-        QShortcut(QKeySequence("2"), self, activated=lambda: self._open(SETTINGS))
+        QShortcut(QKeySequence("2"), self, activated=lambda: self._open(DATA))
+        QShortcut(QKeySequence("3"), self, activated=lambda: self._open(SETTINGS))
         QShortcut(QKeySequence("F11"), self, activated=self._toggle_fullscreen)
 
     # --- layout -----------------------------------------------------------------
@@ -182,11 +212,16 @@ class MainWindow(QWidget):
         small = config.UI_FONT_PX["small"]
         self._status = self._label("", small, "muted")
         self._error = self._label("", small, "error")
+        self._back_to_camera = TextButton("back to camera", self._fonts)
+        self._back_to_camera.clicked.connect(self.back_to_camera)
+        self._back_to_camera.hide()
         layout.addWidget(self._status)
         layout.addWidget(self._error)
-        layout.addSpacing(28)
-        self._nav = NavChoice("", NAV_PAGES, "live", self._fonts)
-        self._nav.chosen.connect(lambda name: self._open(NAV_PAGES.index(name)))
+        layout.addSpacing(12)
+        layout.addWidget(self._back_to_camera)
+        layout.addSpacing(16)
+        self._nav = NavChoice("", list(NAV_PAGES), "live", self._fonts)
+        self._nav.chosen.connect(lambda name: self._open(NAV_PAGES[name]))
         layout.addWidget(self._nav)
         return header
 
@@ -194,7 +229,7 @@ class MainWindow(QWidget):
 
     def _open(self, index: int) -> None:
         self._pages.setCurrentIndex(index)
-        nav_name = NAV_PAGES[min(index, SETTINGS)]  # calibrating counts as settings
+        nav_name = "settings" if index == CALIBRATE else next(n for n, i in NAV_PAGES.items() if i == index)
         if self._nav.current() != nav_name:
             self._nav.set_current(nav_name)
 
@@ -204,8 +239,38 @@ class MainWindow(QWidget):
             self._live.collapse_expanded()
         elif index == CALIBRATE:
             self._open(SETTINGS)
-        elif index == SETTINGS:
+        elif index in (SETTINGS, DATA):
             self._open(LIVE)
+
+    # --- photos -----------------------------------------------------------------
+
+    def show_photo(self, path: Path) -> None:
+        """Label everyone in a photo on the live page, instead of the camera."""
+        image = cv2.imread(str(path))
+        if image is None:
+            self._error.setText(f"cannot read {path.name}")
+            return
+        self._worker.show_still(image)
+        self._photo = path.name
+        self._status.setText(f"photo: {path.name}")
+        self._back_to_camera.show()
+        self._open(LIVE)
+
+    def back_to_camera(self) -> None:
+        self._worker.show_still(None)
+        self._photo = None
+        self._status.setText("")
+        self._back_to_camera.hide()
+
+    def dragEnterEvent(self, event) -> None:
+        if image_paths(event.mimeData()):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        paths = image_paths(event.mimeData())
+        if paths:
+            event.acceptProposedAction()
+            self.show_photo(paths[0])
 
     # --- settings ---------------------------------------------------------------
 
@@ -249,8 +314,12 @@ class MainWindow(QWidget):
         elif page == CALIBRATE:
             self._calibration.show_result(result)
 
+    def _on_status(self, text: str) -> None:
+        """Worker news; a shown photo keeps its name when the news is over."""
+        self._status.setText(text or (f"photo: {self._photo}" if self._photo else ""))
+
     def _show_failure(self, message: str) -> None:
-        hint = "try --camera N, --video FILE or --image FILE"
+        hint = "drop a photo on the window, or try --camera N, --video FILE or --image FILE"
         self._live.show_failure(f"no video\n\n{message}\n\n{hint}")
         self._error.setText("camera stopped")
         self._error.setToolTip(message)

@@ -87,7 +87,7 @@ def test_an_empty_view_says_no_one_is_there(fonts):
 def test_only_hooded_people_leave_the_vent_shut_and_say_why(fonts):
     page, _ = live_page(fonts)
     page.show_result(result([person(*seat_pixel(0, 0)), person(*seat_pixel(0, 1))], [WARM, WARM]))
-    assert status(page) == "vent shut, everyone seated is dressed warm"
+    assert status(page) == "vent shut, everyone seated is in a jacket"
 
 
 def test_people_outside_the_plan_are_marked_and_explained(fonts):
@@ -116,10 +116,10 @@ def test_the_seat_grid_follows_its_layer(fonts):
 
 def test_the_legend_shows_the_weights_the_algorithm_uses(fonts):
     page, settings = live_page(fonts)
-    assert [text for _, text in page._plan_panel._legend._entries] == ["hot 1", "unsure 0.5", "cold 0.15"]
+    assert [text for _, text in page._plan_panel._legend._entries] == ["needs air 1", "maybe 0.5", "fine 0.15"]
     heavier = replace(settings, decision=replace(settings.decision, weights=NeedWeights(hot=0.9, unsure=0.4, cold=0.1)))
     page.set_settings(heavier)
-    assert [text for _, text in page._plan_panel._legend._entries] == ["hot 0.9", "unsure 0.4", "cold 0.1"]
+    assert [text for _, text in page._plan_panel._legend._entries] == ["needs air 0.9", "maybe 0.4", "fine 0.1"]
 
 
 def test_display_only_changes_keep_the_vent_state(fonts):
@@ -280,7 +280,7 @@ def test_the_model_dropdown_announces_the_choice(fonts):
     announced = []
     page.changed.connect(announced.append)
     dropdown = find(page, "vision", QComboBox)[0]
-    dropdown.textActivated.emit("clip")
+    dropdown.activated.emit(dropdown.findData("clip"))
     assert announced[-1].view.model_key == "clip"
 
 
@@ -288,7 +288,9 @@ def test_the_detector_dropdown_announces_the_choice(fonts):
     page = SettingsPage(fonts, AppSettings())
     announced = []
     page.changed.connect(announced.append)
-    find(page, "vision", QComboBox)[1].textActivated.emit("both")
+    detector = find(page, "vision", QComboBox)[1]
+    assert detector.itemText(detector.findData("both")) == "YOLO11n-pose + YOLOv8n-head"
+    detector.activated.emit(detector.findData("both"))
     assert announced[-1].view.detector == "both"
 
 
@@ -299,21 +301,11 @@ def test_the_toolbar_swaps_the_detector(fonts):
     parts = page._toolbar._detector_parts
     parts["head"].trigger()  # tick head alongside body
     assert announced[-1].view.detector == "both"
-    assert page._toolbar._detector.text() == "body + head"
+    assert page._toolbar._detector.text() == "YOLO11n-pose + YOLOv8n-head"
     parts["body"].trigger()  # untick body
     assert announced[-1].view.detector == "head"
     page.set_settings(replace(settings, view=replace(settings.view, detector="both")))
     assert page._toolbar.detector() == "both"
-
-
-def test_the_last_detector_cannot_be_unticked(fonts):
-    page, _ = live_page(fonts)
-    announced = []
-    page.changed.connect(announced.append)
-    page._toolbar._detector_parts["body"].trigger()  # body is the only one ticked
-    assert page._toolbar._detector_parts["body"].isChecked()
-    assert page._toolbar.detector() == "body"
-    assert announced == []
 
 
 def test_a_toggle_announces_the_change(fonts):
@@ -448,14 +440,35 @@ def test_the_panel_items_and_the_hide_icon_agree(fonts):
     assert not page._toolbar.action("camera").isChecked() and page._toolbar.action("plan").isChecked()
 
 
-def test_pipeline_items_grey_out_what_cannot_run(fonts):
+def test_no_detector_shows_none_and_greys_out_the_clothing_model(fonts):
     page, settings = live_page(fonts)
     page.set_settings(replace(settings, view=replace(settings.view, detect_people=False)))
-    assert not page._toolbar.action("classify_clothing").isEnabled() and not page._toolbar._model.isEnabled()
+    assert page._toolbar._detector.text() == "no detector" and not page._toolbar._model.isEnabled()
     page.set_settings(replace(settings, view=replace(settings.view, classify_clothing=False)))
-    assert page._toolbar.action("classify_clothing").isEnabled() and not page._toolbar._model.isEnabled()
-    page.set_settings(settings)
-    assert page._toolbar._model.isEnabled()
+    assert page._toolbar._model.currentData() == "none" and page._toolbar._model.isEnabled()
+
+
+def test_unticking_every_detector_gives_the_plain_stream(fonts):
+    page, _ = live_page(fonts)  # body ticked
+    announced = []
+    page.changed.connect(announced.append)
+    page._toolbar._detector_parts["body"].trigger()
+    assert announced[-1].view.detect_people is False and announced[-1].view.detector == "body"  # remembered
+    page.set_settings(announced[-1])
+    page._toolbar._detector_parts["head"].trigger()
+    assert announced[-1].view.detect_people is True and announced[-1].view.detector == "head"
+
+
+def test_choosing_none_for_clothing_stops_classifying(fonts):
+    page, _ = live_page(fonts)
+    announced = []
+    page.changed.connect(announced.append)
+    model = page._toolbar._model
+    model.activated.emit(model.findData("none"))
+    assert announced[-1].view.classify_clothing is False
+    page.set_settings(announced[-1])
+    model.activated.emit(model.findData("clip"))
+    assert announced[-1].view.classify_clothing is True and announced[-1].view.model_key == "clip"
 
 
 def test_stepper_buttons_line_up_across_rows(fonts):

@@ -38,6 +38,8 @@ CLIP_MODELS: dict[str, ClipModelSpec] = {
     "fashion": ClipModelSpec("hf-hub:Marqo/marqo-fashionSigLIP", None),
 }
 
+CLOTHING_NAMES = {"warm": "jacket", "light": "shirt", "unknown": "unsure"}  # shown in the UI
+CLIP_MODEL_NAMES = {"clip": "CLIP ViT-B/32", "fashion": "Marqo-FashionSigLIP"}  # shown in the UI
 DEFAULT_CLIP_MODEL = "fashion"  # beat clip on every test so far
 MIN_PYTHON_VERSION = (3, 10)
 
@@ -58,6 +60,7 @@ HEAD_IMAGE_SIZE = 640
 # Which detector finds people; "both" fuses body and head boxes
 DETECTOR_MODES = ("body", "head", "both")
 DEFAULT_DETECTOR = "body"
+DETECTOR_NAMES = {"body": "YOLO11n pose", "head": "YOLOv8n head", "both": "YOLO11n-pose + YOLOv8n-head"}  # shown in the UI
 FUSE_HEAD_TOP_FRACTION = 0.45  # a head belongs to a body if its centre is in this top share
 FUSE_HEAD_SIDE_MARGIN = 0.1  # in body widths; heads may poke out a little
 
@@ -102,6 +105,7 @@ TRACK_MAX_MISSING_SECONDS = 2.0  # forget a person after this long unseen
 # Eval and crop saving
 EVAL_DIR = DATA_DIR / "eval"  # holds warm/ and light/ subfolders
 RAW_CROPS_DIR = DATA_DIR / "raw"  # --save-crops writes here, sort by hand
+DISCARDED_CROPS_DIR = DATA_DIR / "discarded"  # crops sorted out on the data page
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 SAVE_CROP_INTERVAL_SECONDS = 2.0  # keeps saved crops varied, not near-duplicates
 
@@ -114,8 +118,8 @@ OVERLAY_LABEL_PADDING_PX = 4
 STILL_IMAGE_FPS = 15  # a still image is re-sent at this rate
 
 # Demo window (ren.ui): soft, pastel, Google-style
-UI_APP_NAME = "ren.ui"
-UI_WINDOW_TITLE = "ren.ui"
+UI_APP_NAME = "Ren.ui"
+UI_WINDOW_TITLE = "Ren.ui"
 UI_START_SIZE = (1360, 820)
 UI_MIN_SIZE = (1100, 700)
 UI_SHUTDOWN_WAIT_MS = 10000  # a model load cannot be interrupted

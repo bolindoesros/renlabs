@@ -8,6 +8,7 @@ from ren.theme import Fonts, color, paint_soft_shadow, state_color
 
 
 DROPDOWN_WIDTH_PX = 210
+DROPDOWN_PAD_PX = 110  # text inset, arrow and its padding
 STEPPER_VALUE_PX = 118
 
 
@@ -386,15 +387,29 @@ class SettingRow(QWidget):
         painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
 
 
-def make_dropdown(options: list[str], current: str) -> QComboBox:
-    """A minimal dropdown, styled to match."""
+def make_dropdown(options: list[str], current: str, labels: dict[str, str] | None = None) -> QComboBox:
+    """A minimal dropdown, styled to match. Items show their label and carry their key."""
     box = QComboBox()
-    box.addItems(options)
-    box.setCurrentText(current)
+    for option in options:
+        box.addItem((labels or {}).get(option, option), option)
+    select_key(box, current)
     box.setCursor(Qt.CursorShape.PointingHandCursor)
-    box.setFixedWidth(DROPDOWN_WIDTH_PX)
+    widest = max((box.fontMetrics().horizontalAdvance(box.itemText(i)) for i in range(box.count())), default=0)
+    box.setFixedWidth(max(DROPDOWN_WIDTH_PX, widest + DROPDOWN_PAD_PX))  # long model names stay whole
     round_popup(box.view().window())
     return box
+
+
+def select_key(box: QComboBox, key: str) -> None:
+    """Show the item for a key, without announcing it."""
+    box.blockSignals(True)
+    box.setCurrentIndex(max(box.findData(key), 0))
+    box.blockSignals(False)
+
+
+def on_key_chosen(box: QComboBox, callback) -> None:
+    """Call back with the chosen item's key, not its label."""
+    box.activated.connect(lambda index: callback(box.itemData(index)))
 
 
 def round_popup(window: QWidget) -> None:

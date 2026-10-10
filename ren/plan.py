@@ -11,6 +11,7 @@ from jacket.types import Box, ClothingResult
 
 SeatState = Literal["hot", "cold", "unsure"]
 LABEL_TO_STATE: dict[str, SeatState] = {"light": "hot", "warm": "cold", "unknown": "unsure"}
+NEED_NAMES: dict[SeatState, str] = {"hot": "needs air", "unsure": "maybe", "cold": "fine"}  # shown in the UI
 
 Corner = tuple[float, float]
 Seat = tuple[int, int]  # (row, col)

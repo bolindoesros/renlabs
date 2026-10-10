@@ -8,20 +8,26 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QPushButton, QWidget
 from jacket import config
 from ren.engine import ViewSettings
 from ren.theme import Fonts
-from ren.widgets import IconButton, make_dropdown, round_popup
+from ren.widgets import IconButton, make_dropdown, on_key_chosen, round_popup, select_key
 
 
-DETECTOR_WIDTH_PX = 150  # fits "body + head"
+MENU_TEXT_INSET_PX = 18  # matches the dropdowns' text inset
+MENU_ARROW_PX = 46  # chevron plus breathing room
+VIEW_BUTTON_WIDTH_PX = 210
 DETECTOR_PARTS = ("body", "head")
+NONE = "none"  # no model: the plain stream, or people without clothing
+NO_DETECTOR_LABEL = "no detector"
 
 
 def detector_mode(ticked: tuple[str, ...]) -> str:
-    """Ticked parts to a stored mode: both parts are "both"."""
+    """Ticked parts to a stored mode: both parts are "both", none is NONE."""
+    if not ticked:
+        return NONE
     return "both" if len(ticked) == len(DETECTOR_PARTS) else ticked[0]
 
 
 def detector_label(mode: str) -> str:
-    return " + ".join(DETECTOR_PARTS) if mode == "both" else mode
+    return NO_DETECTOR_LABEL if mode == NONE else config.DETECTOR_NAMES[mode]
 
 
 @dataclass(frozen=True)
@@ -32,14 +38,10 @@ class ViewItem:
 
 
 VIEW_SECTIONS: dict[str, tuple[ViewItem, ...]] = {
-    "pipeline": (
-        ViewItem("detect_people", "human detection"),
-        ViewItem("classify_clothing", "clothing detection"),
-    ),
     "panels": (
         ViewItem("camera", "camera", is_panel=True),
         ViewItem("plan", "seating plan", is_panel=True),
-        ViewItem("crops", "torso crops", is_panel=True),
+        ViewItem("crops", "crops", is_panel=True),
     ),
     "camera": (
         ViewItem("show_image", "picture"),
@@ -68,6 +70,32 @@ class StickyMenu(QMenu):
         super().mouseReleaseEvent(event)
 
 
+class MenuButton(QPushButton):
+    """A pill that opens a menu. Qt ignores left padding on left-aligned
+    menu buttons, so an inset label draws the text instead."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self.setObjectName("viewButton")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._label = QLabel(text)
+        self._label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(MENU_TEXT_INSET_PX, 0, MENU_ARROW_PX, 0)
+        row.addWidget(self._label)
+
+    def text(self) -> str:
+        return self._label.text()
+
+    def setText(self, text: str) -> None:
+        self._label.setText(text)
+
+    def fit_text(self) -> None:
+        """Just wide enough for the current text."""
+        width = self._label.fontMetrics().horizontalAdvance(self._label.text())
+        self.setFixedWidth(width + MENU_TEXT_INSET_PX + MENU_ARROW_PX + 4)  # 4: rounding slack
+
+
 class Toolbar(QWidget):
     venue_chosen = Signal(str)
     venue_add_requested = Signal()
@@ -87,28 +115,23 @@ class Toolbar(QWidget):
         self._venue.textActivated.connect(self.venue_chosen)
         self._add_venue = IconButton("add", "add a venue (copies this one)", fonts)
         self._add_venue.clicked.connect(self.venue_add_requested)
-        self._model = make_dropdown(list(config.CLIP_MODELS), model_key)
-        self._model.setToolTip("clothing model")
-        self._model.textActivated.connect(self.model_chosen)
-        self._detector = QPushButton()  # tick body, head, or both
-        self._detector.setObjectName("viewButton")
-        self._detector.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._detector.setFixedWidth(DETECTOR_WIDTH_PX)
-        self._detector.setToolTip("people detector. body: pose model, head: head model, both ticked: the two agree on each person")
+        self._model = make_dropdown([*config.CLIP_MODELS, NONE], model_key, config.CLIP_MODEL_NAMES)
+        self._model.setToolTip("clothing model, or none to only find people")
+        on_key_chosen(self._model, self.model_chosen.emit)
+        self._detector = MenuButton("")  # tick body, head, or both
+        self._detector.setToolTip("people detectors: body pose, heads, both so the two agree, or none for the plain stream")
         detector_menu = StickyMenu(self._detector)
         round_popup(detector_menu)
         self._detector.setMenu(detector_menu)
         self._detector_parts: dict[str, QAction] = {}
         for part in DETECTOR_PARTS:
-            action = detector_menu.addAction(part)
+            action = detector_menu.addAction(config.DETECTOR_NAMES[part])
             action.setCheckable(True)
             action.toggled.connect(self._on_detector_toggled)
             self._detector_parts[part] = action
         self.set_detector(view.detector)
-        self._view_button = QPushButton("layers")  # QToolButton cannot left-align text
-        self._view_button.setObjectName("viewButton")
-        self._view_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._view_button.setFixedWidth(210)
+        self._view_button = MenuButton("layers")
+        self._view_button.setFixedWidth(VIEW_BUTTON_WIDTH_PX)
         self._menu = StickyMenu(self._view_button)
         round_popup(self._menu)
         self._view_button.setMenu(self._menu)
@@ -155,7 +178,7 @@ class Toolbar(QWidget):
         return self._actions[key]
 
     def model(self) -> str:
-        return self._model.currentText()
+        return self._model.currentData()
 
     def set_view(self, view: ViewSettings) -> None:
         """Show settings changed elsewhere, without announcing them."""
@@ -163,7 +186,9 @@ class Toolbar(QWidget):
             for item in items:
                 if not item.is_panel:
                     self._quietly(self._actions[item.key], getattr(view, item.key))
-        self._sync_enabled(view)
+        self.set_detector(view.detector if view.detect_people else NONE)
+        self.set_model(view.model_key if view.classify_clothing else NONE)
+        self._model.setEnabled(view.detect_people)  # clothing needs people
 
     def venue(self) -> str:
         return self._venue.currentText()
@@ -185,30 +210,20 @@ class Toolbar(QWidget):
             self._quietly(action, mode in (part, "both"))
         self._detector_mode = mode
         self._detector.setText(detector_label(mode))
+        self._detector.fit_text()
 
     def _ticked_parts(self) -> tuple[str, ...]:
         return tuple(part for part, action in self._detector_parts.items() if action.isChecked())
 
     def _on_detector_toggled(self) -> None:
-        if not self._ticked_parts():  # people need some detector; undo unticking the last one
-            self.set_detector(self._detector_mode)
-            return
         self.set_detector(self.detector())
         self.detector_chosen.emit(self._detector_mode)
 
     def set_model(self, model_key: str) -> None:
-        self._model.blockSignals(True)
-        self._model.setCurrentText(model_key)
-        self._model.blockSignals(False)
+        select_key(self._model, model_key)
 
     def set_panel_visible(self, panel: str, visible: bool) -> None:
         self._quietly(self._actions[panel], visible)
-
-    def _sync_enabled(self, view: ViewSettings) -> None:
-        """Clothing needs people; the model needs clothing detection."""
-        self._actions["classify_clothing"].setEnabled(view.detect_people)
-        self._detector.setEnabled(view.detect_people)
-        self._model.setEnabled(view.detect_people and view.classify_clothing)
 
     @staticmethod
     def _quietly(action: QAction, checked: bool) -> None:

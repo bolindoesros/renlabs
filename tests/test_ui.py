@@ -18,7 +18,7 @@ from ren.engine import FrameResult
 from ren.plan import Calibration, PlanLayout
 from ren.settings import AppSettings, replace_path
 from ren.theme import load_fonts
-from ren.ui import CALIBRATE, LIVE, SETTINGS, MainWindow
+from ren.ui import CALIBRATE, DATA, LIVE, SETTINGS, MainWindow
 
 
 class FakeWorker(QObject):
@@ -34,6 +34,9 @@ class FakeWorker(QObject):
 
     def set_settings(self, settings) -> None:
         self.latest = settings
+
+    def show_still(self, image) -> None:
+        self.still = image
 
     def stop(self) -> None:
         self.stopped = True
@@ -201,7 +204,8 @@ def test_a_view_menu_tick_is_saved_like_any_other_setting(window, worker, saved)
 
 
 def test_the_toolbar_model_dropdown_switches_the_model(window, worker, saved):
-    window._live._toolbar._model.textActivated.emit("clip")
+    model = window._live._toolbar._model
+    model.activated.emit(model.findData("clip"))
     assert saved[-1].view.model_key == "clip" and worker.latest.model_key == "clip"
 
 
@@ -239,3 +243,62 @@ def test_switching_venue_from_the_toolbar_is_saved(window, saved):
     window._live._toolbar._add_venue.click()
     window._live._toolbar._venue.textActivated.emit("lt1")
     assert saved[-1].venue == "lt1"
+
+
+def test_a_dropped_photo_replaces_the_camera_until_going_back(window, worker, tmp_path):
+    import cv2
+    photo = tmp_path / "group.jpg"
+    cv2.imwrite(str(photo), np.full((40, 60, 3), 80, dtype=np.uint8))
+    window._open(DATA)
+    window.show_photo(photo)
+    assert worker.still is not None and window._pages.currentIndex() == LIVE
+    assert "group.jpg" in window._status.text() and not window._back_to_camera.isHidden()
+    window.back_to_camera()
+    assert worker.still is None and window._back_to_camera.isHidden()
+
+
+def test_an_unreadable_photo_is_reported(window, worker, tmp_path):
+    bad = tmp_path / "broken.jpg"
+    bad.write_bytes(b"nope")
+    window.show_photo(bad)
+    assert "broken.jpg" in window._error.text()
+
+
+def test_the_data_page_is_in_the_nav(window):
+    window._nav.select("data")
+    assert window._pages.currentIndex() == DATA
+    window._back()
+    assert window._pages.currentIndex() == LIVE
+
+
+def test_a_photo_still_works_when_the_camera_fails(app):
+    import threading
+    import time as clock
+    from ren.ui import FrameWorker
+
+    class Engine:
+        def detector_loaded(self, mode): return True
+        def is_loaded(self, key): return True
+        def load_detector(self, mode): pass
+        def process(self, frame, settings): return frame_result()
+
+    def broken_camera():
+        raise RuntimeError("no camera")
+
+    worker = FrameWorker(broken_camera, Engine(), replace(AppSettings().view, detect_people=False))
+    failures, frames = [], []
+    worker.failed.connect(failures.append)
+    worker.frame_ready.connect(lambda result, fps: frames.append(result))
+    thread = threading.Thread(target=worker.run)
+    thread.start()
+    deadline = clock.monotonic() + 5
+    while not failures and clock.monotonic() < deadline:
+        app.processEvents()  # signals from the worker thread are queued
+        clock.sleep(0.01)
+    worker.show_still(np.zeros((10, 10, 3), dtype=np.uint8))
+    while not frames and clock.monotonic() < deadline:
+        app.processEvents()
+        clock.sleep(0.01)
+    worker.stop()
+    thread.join(5)
+    assert failures == ["RuntimeError: no camera"] and frames

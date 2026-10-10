@@ -44,7 +44,7 @@ class FrameResult:
     results: list[ClothingResult]  # one per box; empty when classification is off
     crops: tuple[CropResult, ...]  # one per box when show_crops, else empty
     headline: str  # big text, e.g. "5 of 7"
-    caption: str  # small text under it, e.g. "visible people warm"
+    caption: str  # small text under it, e.g. "visible people in jackets"
 
 
 class FrameEngine:
@@ -101,4 +101,4 @@ class FrameEngine:
         warm_count, known_count = count_warm(results)
         if known_count == 0:
             return "-", "no visible people classified"
-        return f"{warm_count} of {known_count}", "visible people warm"
+        return f"{warm_count} of {known_count}", "visible people in jackets"

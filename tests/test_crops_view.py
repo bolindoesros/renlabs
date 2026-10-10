@@ -26,7 +26,7 @@ def test_one_tile_per_person_with_its_tag(fonts):
     view = CropsView(fonts)
     view.show_result(FrameResult(FRAME, [BOX, BOX], [ClothingResult("light", 0.1, ""), ClothingResult("warm", 0.9, "")],
                                  (CropResult(CROP, ""), CropResult(CROP, "")), "", ""))
-    assert [tile.text for tile in view.tiles()] == ["hot 90%", "cold 90%"]
+    assert [tile.text for tile in view.tiles()] == ["shirt 90%", "jacket 90%"]
 
 
 def test_an_uncut_torso_shows_the_reason(fonts):
@@ -47,3 +47,13 @@ def test_tiles_spread_to_fill_the_panel():
     assert tile_side(1, 300, 300)[0] == 1
     assert tile_side(4, 600, 200)[0] == 4  # wide panel: one row
     assert tile_side(4, 200, 600)[0] == 1  # tall panel: one column
+
+
+def test_save_crops_writes_what_is_shown(fonts, tmp_path, monkeypatch):
+    from jacket import config
+    from ren.crops_view import CropsPanel
+    monkeypatch.setattr(config, "RAW_CROPS_DIR", tmp_path / "raw")
+    panel = CropsPanel(fonts)
+    assert panel.save() == [] and panel.status.text() == "nothing to save"
+    panel.show_result(FrameResult(FRAME, [BOX, BOX], [], (CropResult(CROP, ""), CropResult(None, "too small")), "", ""))
+    assert len(panel.save()) == 1 and "saved 1" in panel.status.text()
