@@ -1,0 +1,46 @@
+# Builds the desktop app. Run it from the Actions tab, or push a tag like v1.0.
+name: build app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHON: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+
+      - name: build (Windows)
+        if: runner.os == 'Windows'
+        run: freeze\build.bat
+        shell: cmd
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: Renlabs-windows
+          path: dist/Renlabs
+
+      - name: build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          ./freeze/build.sh
+          ditto -c -k --keepParent dist/Renlabs.app dist/Renlabs-mac.zip  # keeps the symlinks a zip step would break
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: Renlabs-mac
+          path: dist/Renlabs-mac.zip
+          compression-level: 0

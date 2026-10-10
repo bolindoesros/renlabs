@@ -32,3 +32,9 @@
     python -m pytest -q
 
 
+
+    < desktop app: models bundled, works offline, ~2.4 GB >
+    ./freeze/build.sh            macOS -> dist/Renlabs.app
+    freeze\build.bat             Windows -> dist\Renlabs\Renlabs.exe (ship the whole folder)
+    GitHub Actions "build app"   builds both; run from the Actions tab or push a v* tag
+    the app keeps settings and crops in ~/Renlabs; Windows log: ~/Renlabs/renlabs.log

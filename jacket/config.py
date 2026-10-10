@@ -1,10 +1,13 @@
 """All tunable values live here."""
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+FROZEN = getattr(sys, "frozen", False)  # running from a PyInstaller build
+# Read-only files (weights, assets); a build unpacks them under sys._MEIPASS
+PROJECT_ROOT = Path(sys._MEIPASS) if FROZEN else Path(__file__).resolve().parent.parent
 WEIGHTS_DIR = PROJECT_ROOT / "weights"
-DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR = Path.home() / "Renlabs" if FROZEN else PROJECT_ROOT / "data"  # the app folder may be read-only
 
 # Camera
 CAMERA_NAME_HINT = "C920"  # found by name because index numbers shift
