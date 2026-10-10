@@ -120,3 +120,18 @@ def test_count_warm_ignores_unknown():
         ClothingResult("unknown", None, "crop too small 30x10"),
     ]
     assert count_warm(results) == (2, 3)
+
+
+def test_an_unscored_result_never_crashes_and_keeps_the_running_score(clock):
+    scores = iter([None, 0.9, None])
+
+    def classify(crop):
+        prob = next(scores)
+        return ClothingResult("unknown", None, "too little upper body") if prob is None else ClothingResult("warm", prob, "")
+
+    pipeline = ClothingPipeline(classify, clock)
+    assert pipeline.process(FRAME, [person()])[0].label == "unknown"
+    clock.now += config.CLASSIFY_INTERVAL_SECONDS
+    assert pipeline.process(FRAME, [person()])[0].label == "warm"
+    clock.now += config.CLASSIFY_INTERVAL_SECONDS
+    assert pipeline.process(FRAME, [person()])[0].label == "warm"  # one unsure read keeps the last score

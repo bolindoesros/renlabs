@@ -109,11 +109,17 @@ class ClothingPipeline:
             return ClothingResult("unknown", None, crop_result.reason)
         if self._is_due(track, now):
             raw = self._classify_crop(crop_result.crop)
-            track.smoothed_warm_prob = smooth(
-                track.smoothed_warm_prob, raw.warm_prob, config.SMOOTHING_ALPHA
-            )
             track.last_scored_at = now
-            logger.debug("raw %.2f -> smoothed %.2f", raw.warm_prob, track.smoothed_warm_prob)
+            if raw.warm_prob is None:  # the model could not tell; keep the running score
+                if track.smoothed_warm_prob is None:
+                    return raw
+            else:
+                track.smoothed_warm_prob = smooth(
+                    track.smoothed_warm_prob, raw.warm_prob, config.SMOOTHING_ALPHA
+                )
+                logger.debug("raw %.2f -> smoothed %.2f", raw.warm_prob, track.smoothed_warm_prob)
+        if track.smoothed_warm_prob is None:
+            return ClothingResult("unknown", None, "no score yet")
         return result_from_warm_probability(
             track.smoothed_warm_prob, config.WARM_THRESHOLD, config.LIGHT_THRESHOLD
         )

@@ -46,7 +46,8 @@ def centre_of(view, row, col):
 
 
 def test_seat_colours_follow_state(fonts):
-    view, _ = build(fonts, {(0, 0): "hot", (0, 1): "cold", (0, 5): "unsure"})
+    view, decision = build(fonts, {(0, 0): "hot", (0, 1): "cold", (0, 5): "unsure"})
+    view.set_state(LAYOUT, view._scene, decision, make_zones(LAYOUT), FAST, ViewSettings(show_beam=False, show_vent=False))
     image = view.grab().toImage()
     for (row, col), state in {(0, 0): "hot", (0, 1): "cold", (0, 5): "unsure"}.items():
         expected = state_color(state)
@@ -71,11 +72,11 @@ def test_the_front_row_is_drawn_at_the_bottom_and_left_stays_left(fonts):
     assert view.cell_rect(0, 0).center().x() < view.cell_rect(0, 5).center().x()
 
 
-def test_cells_are_square_and_fit_inside_the_widget(fonts):
+def test_the_plan_has_the_camera_shape_and_fits_inside_the_widget(fonts):
     view, _ = build(fonts, {})
-    cell = view.cell_rect(1, 1)
-    assert cell.width() == pytest.approx(cell.height())
-    assert view.rect().contains(view.plan_rect().toRect())
+    plan = view.plan_rect()
+    assert plan.width() / plan.height() == pytest.approx(config.PLAN_ASPECT)
+    assert view.rect().contains(plan.toRect())
 
 
 def test_an_open_vent_paints_a_beam_toward_the_aimed_seat(fonts):
@@ -141,7 +142,7 @@ def with_tilt(view_decision, tilt: float):
 def test_closing_flaps_fade_the_beam(fonts):
     view, decision = build(fonts, {(2, 5): "hot"})
     scene = SeatingScene(LAYOUT, {(2, 5): SeatReading("hot", None)})
-    beam_point = view.point_at(0.5 + 0.18, 0.5 + 0.12)
+    beam_point = view.point_at(0.64, 0.59)  # on the beam, outside the targeted zone tint
     background = color("background")
     plain = (background.red(), background.green(), background.blue())
 
@@ -174,7 +175,7 @@ def test_each_layer_can_be_hidden_on_its_own(fonts):
     background = color("background")
     plain = (background.red(), background.green(), background.blue())
     seat_point = centre_of(view, 2, 5)
-    beam_point = view.point_at(0.5 + 0.18, 0.5 + 0.12)
+    beam_point = view.point_at(0.64, 0.59)  # on the beam, outside the targeted zone tint
     glyph_point = view.point_at(0.5, 0.5)
 
     everything = painted(view, ViewSettings(), decision, scene)
@@ -199,12 +200,13 @@ def test_each_layer_can_be_hidden_on_its_own(fonts):
 
 
 def test_zone_share_text_never_covers_a_seat(fonts):
-    from ren.seating_view import SEAT_DOT
+    from ren.seating_view import PERSON_DOT_MAX_PX, SEAT_DOT
     view, decision = build(fonts, {(2, 0): "hot"})
     assert decision.zone_shares["back left"] == pytest.approx(1.0)  # so a 100% label sits top-left
+    view.set_state(LAYOUT, view._scene, decision, make_zones(LAYOUT), FAST, ViewSettings(show_beam=False, show_vent=False))
     image = view.grab().toImage()
     cell = view.cell_rect(2, 0)
-    radius = cell.width() * SEAT_DOT / 2
+    radius = min(view.seat_size() * SEAT_DOT / 2, PERSON_DOT_MAX_PX)
     expected = state_color("hot")
     top = int(cell.center().y() - radius + 4)  # just inside the dot's top
     for x in range(int(cell.center().x() - 6), int(cell.center().x() + 7)):

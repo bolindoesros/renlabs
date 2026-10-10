@@ -19,11 +19,11 @@ def status_text(decision: Decision, scene: SeatingScene, people: int) -> str:
     """What the vent is doing, and why."""
     if people == 0:
         return "no one in view"
-    if not scene.seats:
+    if not scene.placed():
         return "everyone is outside the plan, check calibration"
     outside = f", {scene.off_plan} outside the plan" if scene.off_plan else ""
     if decision.closed:
-        return f"vent shut, nobody seated yet{outside}"  # smoothing lags a moment behind new arrivals
+        return f"vent shut, nobody in a zone yet{outside}"  # smoothing lags a moment behind new arrivals
     text = f"{PHASE_VERBS.get(decision.phase, 'aiming at')} {decision.target_zone}"
     if not decision.reachable:
         text += ", out of reach"

@@ -617,21 +617,23 @@ def test_a_preset_sets_detector_and_model_together_and_lights_up(fonts):
     page, _ = live_page(fonts)
     announced = []
     page.changed.connect(announced.append)
-    page._toolbar._presets["accurate"].click()
+    page._toolbar._presets["accurate"].trigger()
     view = announced[-1].view
     assert (view.detect_people, view.detector, view.classify_clothing, view.model_key) == (True, "both", True, "fashion")
     page.set_settings(announced[-1])
     assert page._toolbar._presets["accurate"].isChecked() and not page._toolbar._presets["fast"].isChecked()
+    assert page._toolbar._preset_button.text() == "accurate"
 
 
 def test_people_only_preset_switches_clothing_off(fonts):
     page, _ = live_page(fonts)
     announced = []
     page.changed.connect(announced.append)
-    page._toolbar._presets["people only"].click()
+    page._toolbar._presets["people only"].trigger()
     assert announced[-1].view.detect_people is True and announced[-1].view.classify_clothing is False
 
 
 def test_no_preset_lights_up_for_an_unlisted_mix(fonts):
     page, settings = live_page(fonts, detector="head", model_key="clip")
-    assert not any(button.isChecked() for button in page._toolbar._presets.values())
+    assert not any(action.isChecked() for action in page._toolbar._presets.values())
+    assert page._toolbar._preset_button.text() == "preset"

@@ -1,7 +1,10 @@
 """Small self-painted controls in the soft, pastel style."""
 from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
-from PySide6.QtWidgets import QAbstractButton, QComboBox, QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractButton, QComboBox, QFrame, QHBoxLayout, QLabel, QSizePolicy, QStyle, QStyleOptionComboBox, QStylePainter,
+    QVBoxLayout, QWidget,
+)
 
 from jacket import config
 from ren.theme import Fonts, color, paint_soft_shadow, state_color
@@ -387,15 +390,35 @@ class SettingRow(QWidget):
         painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
 
 
-def make_dropdown(options: list[str], current: str, labels: dict[str, str] | None = None) -> QComboBox:
-    """A minimal dropdown, styled to match. Items show their label and carry their key."""
-    box = QComboBox()
+class TrimmedComboBox(QComboBox):
+    """Ends a label that does not fit in an ellipsis instead of clipping it."""
+
+    def paintEvent(self, event) -> None:
+        painter = QStylePainter(self)
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
+        field = self.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox, option, QStyle.SubControl.SC_ComboBoxEditField, self
+        )
+        option.currentText = self.fontMetrics().elidedText(option.currentText, Qt.TextElideMode.ElideRight, field.width())
+        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
+
+
+def make_dropdown(
+    options: list[str], current: str, labels: dict[str, str] | None = None, width: int | None = None
+) -> QComboBox:
+    """A minimal dropdown, styled to match. Items show their label and carry their key.
+    A fixed width trims long labels with an ellipsis; without one the box fits the widest."""
+    box = TrimmedComboBox() if width else QComboBox()
     for option in options:
         box.addItem((labels or {}).get(option, option), option)
     select_key(box, current)
     box.setCursor(Qt.CursorShape.PointingHandCursor)
     widest = max((box.fontMetrics().horizontalAdvance(box.itemText(i)) for i in range(box.count())), default=0)
-    box.setFixedWidth(max(DROPDOWN_WIDTH_PX, widest + DROPDOWN_PAD_PX))  # long model names stay whole
+    box.setFixedWidth(width or max(DROPDOWN_WIDTH_PX, widest + DROPDOWN_PAD_PX))
+    for i in range(box.count()):
+        box.setItemData(i, box.itemText(i), Qt.ItemDataRole.ToolTipRole)  # full name when trimmed
     round_popup(box.view().window())
     return box
 

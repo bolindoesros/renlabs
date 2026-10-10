@@ -3,7 +3,7 @@ import math
 from dataclasses import dataclass
 
 from jacket import config
-from ren.plan import PlanLayout, SeatingScene, Zone, make_zones
+from ren.plan import PlanLayout, SeatingScene, Zone, make_zones, zone_of
 
 MIN_AIM_DISTANCE_M = 0.05  # closer than this, the vent points straight down
 MAX_STEP_S = 1.0  # longer gaps between updates count as this
@@ -57,10 +57,6 @@ class Decision:
     reachable: bool
     zone_shares: dict[str, float]  # demand split across zones
     off_plan: int  # people seen outside the seating area
-
-
-def seat_center(row: int, col: int, layout: PlanLayout) -> tuple[float, float]:
-    return layout.seat_uv(row, col)
 
 
 def to_meters(u: float, v: float, layout: PlanLayout, vent: VentSettings) -> tuple[float, float]:
@@ -177,7 +173,8 @@ class DecisionMaker:
         self._mirrored = mirrored
         self._zones = zones if zones is not None else make_zones(layout)
         self._picker = ZonePicker(decision)
-        self._need = {(r, c): 0.0 for r in range(layout.rows) for c in range(layout.cols)}  # smoothed occupancy
+        self._need = {zone.name: 0.0 for zone in self._zones}  # smoothed head count per zone
+        self._spots: dict[str, tuple[float, float]] = {}  # where each zone's people last stood
         self._rotation = 0.0
         self._tilt = config.VENT_CLOSED_TILT_DEG  # starts shut
         self._last: float | None = None
@@ -192,11 +189,17 @@ class DecisionMaker:
             1 - math.exp(-dt / self._decision.smoothing_s)
         )
         self._last = now
-        for seat in self._need:
-            occupied = 1.0 if seat in scene.seats else 0.0  # clothing never steers the air
-            self._need[seat] += alpha * (occupied - self._need[seat])
+        present: dict[str, list[tuple[float, float]]] = {zone.name: [] for zone in self._zones}
+        for person in scene.placed():  # clothing never steers the air
+            zone = zone_of(self._zones, person.u, person.v)
+            if zone is not None:
+                present[zone.name].append((person.u, person.v))
+        for name, spots in present.items():
+            self._need[name] += alpha * (len(spots) - self._need[name])
+            if spots:
+                self._spots[name] = (sum(u for u, _ in spots) / len(spots), sum(v for _, v in spots) / len(spots))
 
-        demand = {zone.name: sum(self._need[seat] for seat in zone.seats()) for zone in self._zones}
+        demand = dict(self._need)
         total = sum(demand.values())
         shares = {name: (value / total if total > 0 else 0.0) for name, value in demand.items()}
         closed = sum(self._need.values()) < self._decision.close_below  # nobody seated
@@ -247,18 +250,9 @@ class DecisionMaker:
         return budget
 
     def _aim_point(self, zone_name: str) -> tuple[float, float]:
-        """Demand-weighted middle of the zone, else its geometric middle."""
+        """The middle of the zone's people, else of the zone."""
         zone = next(z for z in self._zones if z.name == zone_name)
-        seats = zone.seats()
-        weights = [self._need[seat] for seat in seats]
-        if sum(weights) <= 1e-9:
-            weights = [1.0] * len(seats)
-        total = sum(weights)
-        centers = [seat_center(row, col, self._layout) for row, col in seats]
-        return (
-            sum(w * c[0] for w, c in zip(weights, centers)) / total,
-            sum(w * c[1] for w, c in zip(weights, centers)) / total,
-        )
+        return self._spots.get(zone_name, zone.middle)
 
     def _decision_for(self, scene, phase, closed, zone_name, aim_point, aim, shares, command_rotation, command_tilt) -> Decision:
         return Decision(

@@ -16,6 +16,7 @@ BEAM_HALF_ANGLE_DEG = 16.0
 BEAM_ALPHA = (45, 130)  # at the vent, at the landing spot
 SEAT_DOT = 0.60  # occupied seat diameter, in cells
 EMPTY_DOT = 0.14  # empty seats are small grey dots
+PERSON_DOT_MAX_PX = 16  # people stay small enough to tell apart
 ZONE_RADIUS_PX = 16
 EDIT_CELL_INSET = 0.12  # gap around each seat box when editing, in cells
 DRAG_START_PX = 4  # a press that moves farther than this drags the seat
@@ -66,20 +67,28 @@ class SeatingPlanView(QWidget):
     # --- geometry ---------------------------------------------------------------
 
     def plan_rect(self) -> QRectF:
-        """The room, centred, with square cells."""
+        """The room, centred, shaped like the camera view."""
         available = QRectF(self.rect()).adjusted(MARGIN_PX, MARGIN_PX + 8, -MARGIN_PX, -MARGIN_PX - 8)
-        cell = min(available.width() / self._layout.cols, available.height() / self._layout.rows)
-        width, height = cell * self._layout.cols, cell * self._layout.rows
+        width = min(available.width(), available.height() * config.PLAN_ASPECT)
+        height = width / config.PLAN_ASPECT
         return QRectF(
             available.left() + (available.width() - width) / 2,
             available.top() + (available.height() - height) / 2, width, height,
         )
 
+    def cell_size(self) -> tuple[float, float]:
+        plan = self.plan_rect()
+        return plan.width() / self._layout.cols, plan.height() / self._layout.rows
+
+    def seat_size(self) -> float:
+        """Seats stay round however the cells stretch."""
+        return min(self.cell_size())
+
     def cell_rect(self, row: int, col: int) -> QRectF:
         """Row 0 is the front, drawn at the bottom."""
         plan = self.plan_rect()
-        cell = plan.width() / self._layout.cols
-        return QRectF(plan.left() + col * cell, plan.bottom() - (row + 1) * cell, cell, cell)
+        width, height = self.cell_size()
+        return QRectF(plan.left() + col * width, plan.bottom() - (row + 1) * height, width, height)
 
     def seat_point(self, row: int, col: int) -> QPointF:
         """Where a seat is drawn; follows the mouse while dragged."""
@@ -88,8 +97,8 @@ class SeatingPlanView(QWidget):
         return self.point_at(*self._layout.seat_uv(row, col))
 
     def seat_rect(self, row: int, col: int) -> QRectF:
-        """A cell-sized square around the seat."""
-        cell = self.plan_rect().width() / self._layout.cols
+        """A seat-sized square around the seat."""
+        cell = self.seat_size()
         rect = QRectF(0, 0, cell, cell)
         rect.moveCenter(self.seat_point(row, col))
         return rect
@@ -100,7 +109,7 @@ class SeatingPlanView(QWidget):
 
     def placed_seat_at(self, point: QPointF) -> tuple[int, int] | None:
         """The nearest seat whose box holds the point."""
-        cell = self.plan_rect().width() / self._layout.cols
+        cell = self.seat_size()
         hits = []
         for row, col in self._layout.seats():
             centre = self.seat_point(row, col)
@@ -114,9 +123,9 @@ class SeatingPlanView(QWidget):
         plan = self.plan_rect()
         if not plan.contains(point):
             return None
-        cell = plan.width() / self._layout.cols
-        col = min(int((point.x() - plan.left()) / cell), self._layout.cols - 1)
-        row = min(int((plan.bottom() - point.y()) / cell), self._layout.rows - 1)
+        width, height = self.cell_size()
+        col = min(int((point.x() - plan.left()) / width), self._layout.cols - 1)
+        row = min(int((plan.bottom() - point.y()) / height), self._layout.rows - 1)
         return row, col
 
     def mousePressEvent(self, event) -> None:
@@ -169,6 +178,9 @@ class SeatingPlanView(QWidget):
             self._paint_editor(painter)
             self._paint_edges(painter)
             return
+        painter.setPen(QPen(color("hairline"), 1.0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(self.plan_rect())  # the camera's view of the room
         if self._layers.show_zones:
             self._paint_zones(painter)  # tints sit under the seats
         if self._layers.show_seats:
@@ -180,17 +192,19 @@ class SeatingPlanView(QWidget):
         self._paint_edges(painter)
 
     def _paint_seats(self, painter: QPainter) -> None:
+        """Seats as small grey dots, people as coloured dots where they really are."""
         painter.setPen(Qt.PenStyle.NoPen)
+        size = self.seat_size()
+        painter.setBrush(empty_seat_color())
         for row, col in self._layout.seats():
-            cell = self.seat_rect(row, col)
-            reading = self._scene.seats.get((row, col)) if self._scene else None
-            if reading is None:
-                painter.setBrush(empty_seat_color())
-                radius = cell.width() * EMPTY_DOT / 2
-            else:
-                painter.setBrush(state_color(reading.state))
-                radius = cell.width() * SEAT_DOT / 2
-            painter.drawEllipse(cell.center(), radius, radius)
+            painter.drawEllipse(self.seat_point(row, col), size * EMPTY_DOT / 2, size * EMPTY_DOT / 2)
+        if self._scene is None:
+            return
+        radius = min(size * SEAT_DOT / 2, PERSON_DOT_MAX_PX)
+        painter.setPen(QPen(color("background"), 1.5))  # keeps a crowd readable
+        for person in self._scene.placed():
+            painter.setBrush(state_color(person.reading.state))
+            painter.drawEllipse(self.point_at(person.u, person.v), radius, radius)
 
     def _paint_editor(self, painter: QPainter) -> None:
         """Dashed boxes for removed seats, filled boxes for seats wherever they sit."""
@@ -209,18 +223,14 @@ class SeatingPlanView(QWidget):
 
     @staticmethod
     def _paint_seat_box(painter: QPainter, cell: QRectF) -> None:
-        inset = cell.width() * EDIT_CELL_INSET
+        inset = min(cell.width(), cell.height()) * EDIT_CELL_INSET
         box = cell.adjusted(inset, inset, -inset, -inset)
-        corner = box.width() * 0.2
+        corner = min(box.width(), box.height()) * 0.2
         painter.drawRoundedRect(box, corner, corner)
 
     def _zone_rect(self, zone: Zone) -> QRectF:
-        rects = [self.seat_rect(row, col) for row, col in zone.seats() if self._layout.has_seat(row, col)]
-        rects = rects or [self.cell_rect(row, col) for row, col in zone.seats()]
-        combined = rects[0]
-        for rect in rects[1:]:
-            combined = combined.united(rect)
-        return combined
+        u0, v0, u1, v1 = zone.bounds
+        return QRectF(self.point_at(u0, v1), self.point_at(u1, v0))
 
     def _targeted(self, zone: Zone) -> bool:
         return self._decision is not None and self._decision.target_zone == zone.name
@@ -267,13 +277,13 @@ class SeatingPlanView(QWidget):
 
     def _paint_vent(self, painter: QPainter, decision: Decision) -> None:
         center = self.point_at(self._vent.u, self._vent.v)
-        plan = self.plan_rect()
-        cell = plan.width() / self._layout.cols
+        cell_w, cell_h = self.cell_size()
+        cell = min(cell_w, cell_h)
         azimuth = decision.plan_azimuth_deg
         open_amount = decision.tilt_deg < SHUT_TILT_DEG
         if open_amount and self._layers.show_beam:
             reach_tilt = min(decision.tilt_deg, self._vent.tilt_max_deg)  # closing flaps fade, not fly out
-            landing = self._landing_point(center, azimuth, reach_tilt, cell)
+            landing = self._landing_point(center, azimuth, reach_tilt, cell_w, cell_h)
             self._paint_beam(painter, center, landing, cell, decision.reachable, self._fade(decision.tilt_deg))
         if self._layers.show_vent:
             self._paint_glyph(painter, center, azimuth, min(cell * 0.62, 46.0), open_amount)
@@ -283,13 +293,13 @@ class SeatingPlanView(QWidget):
         span = SHUT_TILT_DEG - self._vent.tilt_max_deg
         return 1.0 if tilt <= self._vent.tilt_max_deg else max(0.0, (SHUT_TILT_DEG - tilt) / span)
 
-    def _landing_point(self, center: QPointF, azimuth: float, tilt: float, cell: float) -> QPointF:
+    def _landing_point(self, center: QPointF, azimuth: float, tilt: float, cell_w: float, cell_h: float) -> QPointF:
         """Where the slanted air reaches head height, in pixels."""
         reach_m = self._vent.drop_m * math.tan(math.radians(tilt))
         east, north = math.sin(math.radians(azimuth)), math.cos(math.radians(azimuth))
         return QPointF(
-            center.x() + east * reach_m * cell / self._vent.seat_width_m,
-            center.y() - north * reach_m * cell / self._vent.row_depth_m,
+            center.x() + east * reach_m * cell_w / self._vent.seat_width_m,
+            center.y() - north * reach_m * cell_h / self._vent.row_depth_m,
         )
 
     def _paint_beam(

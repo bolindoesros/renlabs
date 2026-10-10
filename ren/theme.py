@@ -115,12 +115,6 @@ def build_stylesheet() -> str:
     }}
     QComboBox:hover, QPushButton#viewButton:hover {{ background: {c['hover']}; }}
     QComboBox:disabled, QPushButton#viewButton:disabled {{ color: {c['muted']}; background: {c['page']}; }}
-    QPushButton#presetButton {{
-        background: {c['chip']}; color: {c['text']}; border: none; border-radius: 19px;
-        padding: 7px 16px; min-height: 24px;
-    }}
-    QPushButton#presetButton:hover {{ background: {c['hover']}; }}
-    QPushButton#presetButton:checked {{ background: {c['accent_soft']}; color: {c['accent']}; }}
     QComboBox::drop-down {{ border: none; width: 34px; }}
     QComboBox::down-arrow {{ image: url("{CHEVRON_FILE.as_posix()}"); width: 12px; height: 12px; }}
     QPushButton#viewButton::menu-indicator {{

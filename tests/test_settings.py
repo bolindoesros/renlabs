@@ -242,3 +242,13 @@ def test_moved_seats_round_trip(tmp_path):
 def test_moved_seats_outside_the_grid_or_plan_are_cleaned():
     settings = AppSettings(venues=(Venue("lt1", PlanLayout(2, 2, (), (((0, 1), (1.5, -1.0)), ((5, 5), (0.5, 0.5))))),))
     assert sanitize(settings).layout.moved == (((0, 1), (1.0, 0.0)),)
+
+
+def test_drawn_zones_round_trip_and_are_cleaned(tmp_path):
+    from ren.plan import ZoneRect
+    path = tmp_path / "settings.json"
+    zones = (ZoneRect("table 1", 0.1, 0.1, 0.4, 0.5), ZoneRect("table 1", 0.5, 0.5, 1.4, 0.9), ZoneRect("tiny", 0, 0, 0.01, 0.01))
+    save_settings(AppSettings(venues=(Venue("lt1", zones=zones),)), path)
+    loaded = load_settings(path).zones
+    assert [z.name for z in loaded] == ["table 1", "zone 1"]  # duplicate renamed, tiny dropped
+    assert loaded[1].bounds == (0.5, 0.5, 1.0, 0.9)

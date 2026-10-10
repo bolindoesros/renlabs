@@ -119,14 +119,30 @@ class SeatReading:
 
 
 @dataclass(frozen=True)
+class PlanPerson:
+    """Someone inside the plan, where they really are."""
+
+    u: float
+    v: float
+    reading: SeatReading
+
+
+@dataclass(frozen=True)
 class SeatingScene:
     layout: PlanLayout
-    seats: dict[tuple[int, int], SeatReading]  # occupied seats by (row, col)
-    unseated: tuple[int, ...] = ()  # box indices outside the seating area
+    seats: dict[tuple[int, int], SeatReading]  # nearest free seat per person, for reference
+    unseated: tuple[int, ...] = ()  # box indices outside the plan
+    people: tuple[PlanPerson, ...] | None = None  # None: people are where their seats are
 
     @property
     def off_plan(self) -> int:
         return len(self.unseated)
+
+    def placed(self) -> list[PlanPerson]:
+        """Everyone inside the plan, at their real spot."""
+        if self.people is not None:
+            return list(self.people)
+        return [PlanPerson(*self.layout.seat_uv(*seat), reading) for seat, reading in self.seats.items()]
 
 
 def read_scene(
@@ -137,15 +153,24 @@ def read_scene(
     calibration: Calibration,
     radius: float = config.PLAN_SEAT_MATCH_RADIUS,
 ) -> SeatingScene:
-    """Give each person their nearest free seat."""
+    """Place everyone on the plan; also give each their nearest free seat."""
     if not boxes:
-        return SeatingScene(layout, {}, ())
+        return SeatingScene(layout, {}, (), ())
     matrix = image_to_plan(calibration, frame_size)
     anchors = np.float32([anchor_of(box) for box in boxes]).reshape(-1, 1, 2)
     plan_points = cv2.perspectiveTransform(anchors, matrix).reshape(-1, 2)
 
+    def reading_of(person: int) -> SeatReading:
+        result = results[person] if results else None
+        label = result.label if result is not None else "unknown"
+        return SeatReading(LABEL_TO_STATE[label], result.warm_prob if result else None)
+
+    inside = [i for i, (u, v) in enumerate(plan_points) if 0.0 <= u <= 1.0 and 0.0 <= v <= 1.0]
+    people = tuple(PlanPerson(float(plan_points[i][0]), float(plan_points[i][1]), reading_of(i)) for i in inside)
+
     pairs = []
-    for person, (u, v) in enumerate(plan_points):
+    for person in inside:
+        u, v = plan_points[person]
         for row, col in layout.seats():
             seat_u, seat_v = layout.seat_uv(row, col)
             distance = math.hypot((u - seat_u) * layout.cols, (v - seat_v) * layout.rows)
@@ -158,42 +183,116 @@ def read_scene(
     for _, person, row, col in pairs:
         if person in seated or (row, col) in seats:
             continue
-        result = results[person] if results else None
-        label = result.label if result is not None else "unknown"
-        seats[(row, col)] = SeatReading(LABEL_TO_STATE[label], result.warm_prob if result else None)
+        seats[(row, col)] = reading_of(person)
         seated.add(person)
-    return SeatingScene(layout, seats, tuple(i for i in range(len(boxes)) if i not in seated))
+    outside = tuple(i for i in range(len(boxes)) if i not in inside)
+    return SeatingScene(layout, seats, outside, people)
 
 
 @dataclass(frozen=True)
 class Zone:
+    """An equal slice of the room; holds the seats placed inside it."""
+
     name: str
-    rows: tuple[int, ...]
-    cols: tuple[int, ...]
+    members: tuple[Seat, ...]
+    bounds: tuple[float, float, float, float]  # u0, v0, u1, v1 in plan units
 
     def seats(self) -> list[tuple[int, int]]:
-        return [(row, col) for row in self.rows for col in self.cols]
+        return list(self.members)
+
+    def contains(self, u: float, v: float) -> bool:
+        u0, v0, u1, v1 = self.bounds
+        return u0 <= u <= u1 and v0 <= v <= v1
+
+    @property
+    def middle(self) -> tuple[float, float]:
+        u0, v0, u1, v1 = self.bounds
+        return (u0 + u1) / 2, (v0 + v1) / 2
+
+
+@dataclass(frozen=True)
+class ZoneRect:
+    """A zone drawn by hand, in plan units (u left to right, v front to back)."""
+
+    name: str
+    u0: float
+    v0: float
+    u1: float
+    v1: float
+
+    @property
+    def bounds(self) -> tuple[float, float, float, float]:
+        return min(self.u0, self.u1), min(self.v0, self.v1), max(self.u0, self.u1), max(self.v0, self.v1)
+
+    def contains(self, u: float, v: float) -> bool:
+        u0, v0, u1, v1 = self.bounds
+        return u0 <= u <= u1 and v0 <= v <= v1
+
+    def moved_by(self, du: float, dv: float) -> "ZoneRect":
+        """Shifted, but kept inside the plan."""
+        u0, v0, u1, v1 = self.bounds
+        du = min(max(du, -u0), 1.0 - u1)
+        dv = min(max(dv, -v0), 1.0 - v1)
+        return ZoneRect(self.name, u0 + du, v0 + dv, u1 + du, v1 + dv)
+
+
+def zone_of(zones: list["Zone"], u: float, v: float) -> "Zone | None":
+    """The first zone holding a plan point."""
+    return next((zone for zone in zones if zone.contains(u, v)), None)
+
+
+def next_zone_name(zones: tuple[ZoneRect, ...]) -> str:
+    taken = {zone.name for zone in zones}
+    number = 1
+    while f"zone {number}" in taken:
+        number += 1
+    return f"zone {number}"
+
+
+def drawn_zones(layout: PlanLayout, rects: tuple[ZoneRect, ...]) -> list[Zone]:
+    """Hand-drawn zones; a seat in two zones belongs to the first."""
+    claimed: set[Seat] = set()
+    zones = []
+    for rect in rects:
+        members = []
+        for seat in layout.seats():
+            if seat not in claimed and rect.contains(*layout.seat_uv(*seat)):
+                members.append(seat)
+                claimed.add(seat)
+        zones.append(Zone(rect.name, tuple(members), rect.bounds))
+    return zones
 
 
 DEPTH_NAMES = {1: [""], 2: ["front", "back"], 3: ["front", "middle", "back"]}
 SIDE_NAMES = {1: [""], 2: ["left", "right"], 3: ["left", "centre", "right"]}
 
 
-def _split(count: int, parts: int) -> list[tuple[int, ...]]:
-    return [tuple(int(i) for i in chunk) for chunk in np.array_split(range(count), parts)]
+def _band(value: float, parts: int) -> int:
+    """Which of `parts` equal bands a 0..1 value falls in; a seat on a border joins the front or left one."""
+    return min(max(math.ceil(value * parts) - 1, 0), parts - 1)
 
 
 def make_zones(
-    layout: PlanLayout, zone_rows: int = config.PLAN_ZONE_ROWS, zone_cols: int = config.PLAN_ZONE_COLS
+    layout: PlanLayout, zone_rows: int = config.PLAN_ZONE_ROWS, zone_cols: int = config.PLAN_ZONE_COLS,
+    drawn: tuple[ZoneRect, ...] = (),
 ) -> list[Zone]:
-    """Split the plan into zones, front to back."""
+    """The hand-drawn zones if there are any, else equal slices of the room."""
+    if drawn:
+        return drawn_zones(layout, drawn)
     zone_rows, zone_cols = min(zone_rows, layout.rows), min(zone_cols, layout.cols)
     depth = DEPTH_NAMES.get(zone_rows, [f"band {i + 1}" for i in range(zone_rows)])
     side = SIDE_NAMES.get(zone_cols, [f"column {i + 1}" for i in range(zone_cols)])
+    members: dict[tuple[int, int], list[Seat]] = {}
+    for row in range(layout.rows):
+        for col in range(layout.cols):
+            u, v = layout.seat_uv(row, col)
+            members.setdefault((_band(v, zone_rows), _band(u, zone_cols)), []).append((row, col))
     zones = []
-    for depth_name, rows in zip(depth, _split(layout.rows, zone_rows)):
-        for side_name, cols in zip(side, _split(layout.cols, zone_cols)):
-            zones.append(Zone(" ".join(part for part in (depth_name, side_name) if part) or "all seats", rows, cols))
+    for i, depth_name in enumerate(depth):
+        for j, side_name in enumerate(side):
+            name = " ".join(part for part in (depth_name, side_name) if part) or "all seats"
+            bounds = (j / zone_cols, i / zone_rows, (j + 1) / zone_cols, (i + 1) / zone_rows)
+            zones.append(Zone(name, tuple(members.get((i, j), [])), bounds))
     return zones
 
 

@@ -3,10 +3,10 @@ import re
 from dataclasses import dataclass, field
 
 from ren.decision import VentSettings
-from ren.plan import Calibration, PlanLayout
+from ren.plan import Calibration, PlanLayout, ZoneRect
 
 DEFAULT_VENUE = "lt1"
-VENUE_FIELDS = ("layout", "calibration", "vent")
+VENUE_FIELDS = ("layout", "calibration", "vent", "zones")
 NAME_MAX_CHARS = 24
 
 
@@ -16,6 +16,7 @@ class Venue:
     layout: PlanLayout = field(default_factory=PlanLayout)
     calibration: Calibration = field(default_factory=Calibration)
     vent: VentSettings = field(default_factory=VentSettings)
+    zones: tuple[ZoneRect, ...] = ()  # none means equal automatic zones
 
 
 def clean_name(text: str, taken: list[str]) -> str:

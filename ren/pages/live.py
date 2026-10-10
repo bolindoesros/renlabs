@@ -103,9 +103,11 @@ class LivePage(QWidget):
         self._grid_cache = None
         if self._plan_error is not None:
             self._retry_plan()  # a settings change may have fixed it
-        inputs = (settings.layout, settings.decision, settings.vent, settings.view.mirror)
-        if previous is None or inputs != (previous.layout, previous.decision, previous.vent, previous.view.mirror):
-            self._zones = make_zones(settings.layout)
+        inputs = (settings.layout, settings.zones, settings.decision, settings.vent, settings.view.mirror)
+        if previous is None or inputs != (
+            previous.layout, previous.zones, previous.decision, previous.vent, previous.view.mirror
+        ):
+            self._zones = make_zones(settings.layout, drawn=settings.zones)
             self._maker = DecisionMaker(
                 settings.layout, settings.decision, settings.vent, self._zones, mirrored=settings.view.mirror
             )

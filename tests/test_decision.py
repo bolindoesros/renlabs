@@ -300,3 +300,13 @@ def test_the_decision_reports_the_plan_azimuth_for_drawing():
     decision = made.update(scene(r1c5="hot"), 1.0)
     assert decision.plan_azimuth_deg == pytest.approx(90, abs=1.0)  # drawn to the right on the plan
     assert decision.rotation_deg == pytest.approx(270, abs=1.0)  # what the hardware is told
+
+
+def test_a_crowd_counts_in_the_zone_it_stands_in_however_few_seats_there_are():
+    from ren.plan import PlanPerson
+    layout = PlanLayout(1, 2)
+    left = SeatReading("hot", None)
+    crowd = tuple(PlanPerson(0.1 + 0.05 * i, 0.5, left) for i in range(4))
+    decision = DecisionMaker(layout, INSTANT, FAST_VENT).update(SeatingScene(layout, {}, (), crowd), now=0.0)
+    assert decision.zone_shares["left"] == pytest.approx(1.0)
+    assert decision.aim[0] < 0.5

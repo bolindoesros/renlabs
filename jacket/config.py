@@ -184,6 +184,9 @@ PLAN_COLS = 6
 PLAN_CORNERS = ((0.10, 0.22), (0.90, 0.22), (0.97, 0.92), (0.03, 0.92))
 PLAN_SEAT_MATCH_RADIUS = 1.0  # in seat widths; farther people are off-plan
 PLAN_ANCHOR_FALLBACK = 0.30  # shoulder row guess, as fraction of box height
+PLAN_ASPECT = CAMERA_WIDTH / CAMERA_HEIGHT  # the plan is drawn the shape of the camera view
+ZONE_MIN_SIZE = 0.05  # smallest hand-drawn zone side, in plan units
+ZONE_NEW_SIZE = 0.3  # side of a freshly added zone
 PLAN_ZONE_ROWS = 2
 PLAN_ZONE_COLS = 3
 

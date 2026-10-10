@@ -55,7 +55,7 @@ def test_out_of_reach_is_said_plainly():
 
 def test_a_shut_vent_never_blames_clothing():
     text = status_text(decision(closed=True, target_zone=None), scene(("cold", "cold")), people=2)
-    assert text == "vent shut, nobody seated yet"
+    assert text == "vent shut, nobody in a zone yet"
 
 
 def test_people_outside_the_plan_are_mentioned_alongside():

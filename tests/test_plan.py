@@ -158,3 +158,40 @@ def test_a_person_is_matched_to_a_moved_seat():
     layout = LAYOUT.with_seat_moved(2, 5, 0.5, 0.5)  # back-right seat now mid-room
     scene = read_scene([person(500, 400)], [LIGHT], FRAME, layout, SQUARE)
     assert list(scene.seats) == [(2, 5)]
+
+
+def test_zones_are_equal_slices_of_the_room():
+    zones = make_zones(PlanLayout(3, 2), 2, 2)
+    assert {zone.bounds for zone in zones} == {(0, 0, 0.5, 0.5), (0.5, 0, 1, 0.5), (0, 0.5, 0.5, 1), (0.5, 0.5, 1, 1)}
+
+
+def test_a_moved_seat_joins_the_zone_it_sits_in():
+    layout = PlanLayout(3, 2).with_seat_moved(0, 0, 0.76, 0.13).with_seat_moved(0, 1, 0.28, 0.12)
+    zones = {zone.name: zone.seats() for zone in make_zones(layout, 2, 2)}
+    assert (0, 0) in zones["front right"] and (0, 1) in zones["front left"]
+
+
+def test_drawn_zones_replace_the_even_split_and_hold_the_seats_inside():
+    from ren.plan import ZoneRect
+    table = ZoneRect("table 1", 0.0, 0.0, 0.34, 0.4)  # front-left corner of a 3x6 room
+    zones = make_zones(LAYOUT, drawn=(table,))
+    assert [z.name for z in zones] == ["table 1"]
+    assert sorted(zones[0].seats()) == [(0, 0), (0, 1)]
+
+
+def test_a_seat_in_two_drawn_zones_counts_once():
+    from ren.plan import ZoneRect
+    zones = make_zones(LAYOUT, drawn=(ZoneRect("a", 0, 0, 1, 1), ZoneRect("b", 0, 0, 1, 1)))
+    assert len(zones[0].seats()) == 18 and zones[1].seats() == []
+
+
+def test_moving_a_zone_keeps_it_inside_the_plan():
+    from ren.plan import ZoneRect
+    assert ZoneRect("a", 0.7, 0.7, 0.9, 0.9).moved_by(0.5, -2).bounds == pytest.approx((0.8, 0.0, 1.0, 0.2))
+
+
+def test_a_crowd_is_placed_where_it_stands_not_spread_over_free_seats():
+    two_seats = PlanLayout(1, 2)  # one seat on each side of the room
+    crowd = [person(150 + 20 * i, 400) for i in range(4)]  # all on the left
+    scene = read_scene(crowd, [LIGHT] * 4, FRAME, two_seats, SQUARE)
+    assert all(p.u < 0.5 for p in scene.placed()) and len(scene.placed()) == 4 and scene.off_plan == 0

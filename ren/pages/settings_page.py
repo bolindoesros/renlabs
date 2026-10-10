@@ -3,20 +3,23 @@ from dataclasses import dataclass
 from typing import Callable
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox, QFrame, QHBoxLayout, QLabel, QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
+)
 
 from jacket import config
 from ren.seating_view import SeatingPlanView
 from ren.settings import AppSettings, add_venue, get_path, remove_venue, replace_path, select_venue
 from ren.theme import Fonts
 from ren.venue_list import VenueList
+from ren.zone_editor import ZoneEditorView
 from ren.widgets import (
     Card, Hairline, NavLink, SettingRow, Stepper, SwitchRow, TextButton, make_dropdown, on_key_chosen, select_key,
 )
 
 RESET_ARMED_MS = 3000
 SECTION_WIDTH_PX = 620
-SEAT_MAP_HEIGHT_PX = 300
+SEAT_MAP_HEIGHT_PX = 380  # the page scrolls, so the maps can be big enough to edit
 NONE = "none"  # dropdown entry that switches a stage off
 NAV_WIDTH_PX = 200
 Path = tuple[str, ...]
@@ -54,6 +57,11 @@ class SeatMapRow:
 
 
 @dataclass(frozen=True)
+class ZoneMapRow:
+    hint: str
+
+
+@dataclass(frozen=True)
 class ActionRow:
     label: str
     button: str
@@ -76,6 +84,8 @@ SECTIONS: dict[str, list] = {
         StepperRow("seats per row", ("layout", "cols"), 1, 16, 1),
         SeatMapRow("drag a seat to place it anywhere; click a seat to remove it, click its dashed box to bring it back;"
                    " right-click a seat to snap it back to the grid"),
+        ZoneMapRow("zones are where the vent can aim. add a zone, drag it over a table or area, drag its corners"
+                   " to resize; right-click a zone to delete it. with no zones drawn, the room is split evenly"),
         ActionRow("calibration", "edit"),
     ],
     "decision": [
@@ -177,7 +187,12 @@ class SettingsPage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(page, 1, Qt.AlignmentFlag.AlignLeft)
         outer.addStretch(0)
-        return wrapper
+        scroll = QScrollArea()  # tall sections scroll instead of squashing their rows
+        scroll.setWidget(wrapper)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        return scroll
 
     def _build_row(self, row) -> QWidget:
         if isinstance(row, ToggleRow):
@@ -188,6 +203,8 @@ class SettingsPage(QWidget):
             return self._dropdown(row)
         if isinstance(row, SeatMapRow):
             return self._seat_map(row)
+        if isinstance(row, ZoneMapRow):
+            return self._zone_map(row)
         button = TextButton(row.button, self._fonts)
         button.clicked.connect(self.calibrate_requested)
         return SettingRow(row.label, button, self._fonts)
@@ -257,6 +274,40 @@ class SettingsPage(QWidget):
         self._refreshers.append(refresh)
         for widget in (hint, view, count):
             layout.addWidget(widget)
+        return box
+
+    def _zone_map(self, row: ZoneMapRow) -> QWidget:
+        box = QWidget()
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 12, 0, 12)
+        hint = QLabel(row.hint)
+        hint.setWordWrap(True)
+        hint.setFont(self._fonts.text(config.UI_FONT_PX["small"]))
+        hint.setStyleSheet(f"color: {config.UI_COLORS['muted']};")
+        view = ZoneEditorView(self._fonts)
+        view.setFixedHeight(SEAT_MAP_HEIGHT_PX)
+        view.zones_changed.connect(lambda zones: self._apply(replace_path(self._settings, ("zones",), zones)))
+        add = TextButton("add zone", self._fonts)
+        add.clicked.connect(view.add_zone)
+        automatic = TextButton("use even split", self._fonts)
+        automatic.clicked.connect(lambda: self._apply(replace_path(self._settings, ("zones",), ())))
+        buttons = QHBoxLayout()
+        buttons.addWidget(add)
+        buttons.addWidget(automatic)
+        buttons.addStretch(1)
+        count = QLabel()
+        count.setFont(self._fonts.text(config.UI_FONT_PX["small"], "medium"))
+        buttons.addWidget(count)
+
+        def refresh(settings: AppSettings) -> None:
+            view.set_zones(settings.layout, settings.zones)
+            automatic.setEnabled(bool(settings.zones))
+            count.setText(f"{len(settings.zones)} zones" if settings.zones else "even split")
+
+        self._refreshers.append(refresh)
+        for item in (hint, view):
+            layout.addWidget(item)
+        layout.addLayout(buttons)
         return box
 
     @staticmethod

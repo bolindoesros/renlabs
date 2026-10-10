@@ -9,7 +9,7 @@ from pathlib import Path
 from jacket import config
 from ren.decision import DecisionSettings, VentSettings
 from ren.engine import ViewSettings
-from ren.plan import Calibration, PlanLayout
+from ren.plan import Calibration, PlanLayout, ZoneRect, next_zone_name
 from ren.venues import DEFAULT_VENUE, VENUE_FIELDS, Venue, clean_name
 
 logger = logging.getLogger("ren.settings")
@@ -36,6 +36,10 @@ class AppSettings:
     @property
     def calibration(self) -> Calibration:
         return self.active.calibration
+
+    @property
+    def zones(self) -> tuple[ZoneRect, ...]:
+        return self.active.zones
 
     @property
     def vent(self) -> VentSettings:
@@ -145,7 +149,22 @@ def _sanitize_venue(venue: Venue) -> Venue:
         slew_deg_per_s=_clamp(vent.slew_deg_per_s, 1.0, 720.0, "slew"),
         seat_width_m=_clamp(vent.seat_width_m, 0.2, 2.0, "seat width"), row_depth_m=_clamp(vent.row_depth_m, 0.3, 3.0, "row depth"),
     )
-    return Venue(venue.name, layout, calibration, vent)
+    return Venue(venue.name, layout, calibration, vent, _clean_zones(venue.zones))
+
+
+def _clean_zones(zones: tuple[ZoneRect, ...]) -> tuple[ZoneRect, ...]:
+    """Inside the plan, big enough to grab, uniquely named."""
+    cleaned: list[ZoneRect] = []
+    for zone in zones:
+        u0, v0, u1, v1 = (min(max(x, 0.0), 1.0) for x in zone.bounds)
+        if u1 - u0 < config.ZONE_MIN_SIZE or v1 - v0 < config.ZONE_MIN_SIZE:
+            logger.warning("settings: dropping zone %r, too small", zone.name)
+            continue
+        name = zone.name.strip() or next_zone_name(tuple(cleaned))
+        if name in {z.name for z in cleaned}:
+            name = next_zone_name(tuple(cleaned))
+        cleaned.append(ZoneRect(name, u0, v0, u1, v1))
+    return tuple(cleaned)
 
 
 def _sanitize_venues(settings: AppSettings) -> tuple[tuple[Venue, ...], str]:

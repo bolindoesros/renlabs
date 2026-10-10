@@ -13,10 +13,16 @@ from ren.widgets import IconButton, make_dropdown, on_key_chosen, round_popup, s
 
 MENU_TEXT_INSET_PX = 18  # matches the dropdowns' text inset
 MENU_ARROW_PX = 46  # chevron plus breathing room
-VIEW_BUTTON_WIDTH_PX = 210
+# Fixed pill widths so the toolbar never shifts; longer text ends in "…"
+VENUE_WIDTH_PX = 150
+DETECTOR_WIDTH_PX = 200
+MODEL_WIDTH_PX = 220
+PRESET_WIDTH_PX = 140
+VIEW_WIDTH_PX = 140
 DETECTOR_PARTS = ("body", "head")
 NONE = "none"  # no model: the plain stream, or people without clothing
 NO_DETECTOR_LABEL = "no detector"
+NO_PRESET_LABEL = "preset"  # shown when the choices match no preset
 
 
 def detector_mode(ticked: tuple[str, ...]) -> str:
@@ -79,26 +85,38 @@ class MenuButton(QPushButton):
     """A pill that opens a menu. Qt ignores left padding on left-aligned
     menu buttons, so an inset label draws the text instead."""
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, width: int) -> None:
         super().__init__()
         self.setObjectName("viewButton")
+        self.setFixedWidth(width)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._label = QLabel(text)
         self._label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         row = QHBoxLayout(self)
         row.setContentsMargins(MENU_TEXT_INSET_PX, 0, MENU_ARROW_PX, 0)
         row.addWidget(self._label)
+        self._text, self._tip = "", ""
+        self.setText(text)
 
     def text(self) -> str:
-        return self._label.text()
+        return self._text
 
     def setText(self, text: str) -> None:
-        self._label.setText(text)
+        """Trimmed to fit; the tooltip keeps the whole text."""
+        self._text = text
+        room = self.width() - MENU_TEXT_INSET_PX - MENU_ARROW_PX
+        self._label.setText(self._label.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, room))
+        self.setToolTip(text if self._label.text() != text else self._tip)
 
-    def fit_text(self) -> None:
-        """Just wide enough for the current text."""
-        width = self._label.fontMetrics().horizontalAdvance(self._label.text())
-        self.setFixedWidth(width + MENU_TEXT_INSET_PX + MENU_ARROW_PX + 4)  # 4: rounding slack
+    def setBaseToolTip(self, tip: str) -> None:
+        """Shown when the text fits."""
+        self._tip = tip
+        self.setText(self._text)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == event.Type.FontChange:  # stylesheet fonts arrive after construction
+            self.setText(self._text)
 
 
 class Toolbar(QWidget):
@@ -117,15 +135,15 @@ class Toolbar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        self._venue = make_dropdown(venues, venue)
+        self._venue = make_dropdown(venues, venue, width=VENUE_WIDTH_PX)
         self._venue.textActivated.connect(self.venue_chosen)
         self._add_venue = IconButton("add", "add a venue (copies this one)", fonts)
         self._add_venue.clicked.connect(self.venue_add_requested)
-        self._model = make_dropdown([*config.CLOTHING_MODELS, NONE], model_key, config.CLIP_MODEL_NAMES)
+        self._model = make_dropdown([*config.CLOTHING_MODELS, NONE], model_key, config.CLIP_MODEL_NAMES, MODEL_WIDTH_PX)
         self._model.setToolTip("clothing model, or none to only find people")
         on_key_chosen(self._model, self.model_chosen.emit)
-        self._detector = MenuButton("")  # tick body, head, or both
-        self._detector.setToolTip("people detectors: body pose, heads, both so the two agree, or none for the plain stream")
+        self._detector = MenuButton("", DETECTOR_WIDTH_PX)  # tick body, head, or both
+        self._detector.setBaseToolTip("people detectors: body pose, heads, both so the two agree, or none for the plain stream")
         detector_menu = StickyMenu(self._detector)
         round_popup(detector_menu)
         self._detector.setMenu(detector_menu)
@@ -141,17 +159,19 @@ class Toolbar(QWidget):
         self._no_detector.toggled.connect(self._on_no_detector_toggled)
         self._last_detector = view.detector  # what ticking off none goes back to
         self.set_detector(view.detector)
-        self._presets: dict[str, QPushButton] = {}
+        self._preset_button = MenuButton(NO_PRESET_LABEL, PRESET_WIDTH_PX)  # one click sets detector and model
+        self._preset_button.setBaseToolTip("model groups: pick one to set the detector and clothing model together")
+        preset_menu = QMenu(self._preset_button)
+        round_popup(preset_menu)
+        self._preset_button.setMenu(preset_menu)
+        self._presets: dict[str, QAction] = {}
         for name, (detector, model) in config.MODEL_PRESETS.items():
-            button = QPushButton(name)
-            button.setObjectName("presetButton")
-            button.setCheckable(True)
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setToolTip(f"{detector_label(detector)} + {config.CLIP_MODEL_NAMES.get(model, 'no clothing model')}")
-            button.clicked.connect(lambda _, n=name: self._on_preset(n))
-            self._presets[name] = button
-        self._view_button = MenuButton("layers")
-        self._view_button.setFixedWidth(VIEW_BUTTON_WIDTH_PX)
+            clothing = config.CLIP_MODEL_NAMES.get(model, "no clothing")
+            action = preset_menu.addAction(f"{name}  ·  {detector_label(detector)} + {clothing}")
+            action.setCheckable(True)
+            action.triggered.connect(lambda _, n=name: self._on_preset(n))
+            self._presets[name] = action
+        self._view_button = MenuButton("layers", VIEW_WIDTH_PX)
         self._menu = StickyMenu(self._view_button)
         round_popup(self._menu)
         self._view_button.setMenu(self._menu)
@@ -163,10 +183,7 @@ class Toolbar(QWidget):
         layout.addSpacing(20)
         for widget in (self._caption("models", fonts), self._detector, self._model):  # people, then clothing
             layout.addWidget(widget)
-        layout.addSpacing(20)
-        layout.addWidget(self._caption("presets", fonts))
-        for button in self._presets.values():
-            layout.addWidget(button)
+        layout.addWidget(self._preset_button)
         layout.addSpacing(20)
         layout.addWidget(self._caption("view", fonts))
         layout.addWidget(self._view_button)
@@ -238,7 +255,6 @@ class Toolbar(QWidget):
             self._last_detector = mode
         self._detector_mode = mode
         self._detector.setText(detector_label(mode))
-        self._detector.fit_text()
 
     def _ticked_parts(self) -> tuple[str, ...]:
         return tuple(part for part, action in self._detector_parts.items() if action.isChecked())
@@ -260,8 +276,9 @@ class Toolbar(QWidget):
     def _show_preset(self) -> None:
         """Light up the preset the current choices match."""
         active = self.preset()
-        for name, button in self._presets.items():
-            button.setChecked(name == active)
+        for name, action in self._presets.items():
+            self._quietly(action, name == active)
+        self._preset_button.setText(active or NO_PRESET_LABEL)
 
     def _on_preset(self, name: str) -> None:
         detector, model = config.MODEL_PRESETS[name]
