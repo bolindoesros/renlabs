@@ -195,3 +195,38 @@ def test_a_crowd_is_placed_where_it_stands_not_spread_over_free_seats():
     crowd = [person(150 + 20 * i, 400) for i in range(4)]  # all on the left
     scene = read_scene(crowd, [LIGHT] * 4, FRAME, two_seats, SQUARE)
     assert all(p.u < 0.5 for p in scene.placed()) and len(scene.placed()) == 4 and scene.off_plan == 0
+
+
+def test_moving_an_inner_column_line_moves_which_seat_a_person_gets():
+    from dataclasses import replace
+    # x 100-900 is the room; the even line between seats 0 and 1 is at x 233
+    at_x = person(250, 600)
+    even = read_scene([at_x], [LIGHT], FRAME, LAYOUT, SQUARE)
+    assert next(iter(even.seats))[1] == 1
+    lines = list(SQUARE.cols_for(LAYOUT))
+    lines[0] = (0.25, 0.25)  # line now at x 300, so x 250 sits in the first seat
+    bent = read_scene([at_x], [LIGHT], FRAME, LAYOUT, replace(SQUARE, col_lines=tuple(lines)))
+    assert next(iter(bent.seats))[1] == 0
+    assert bent.people[0].u < 1 / 6
+
+
+def test_grid_lines_follow_tilted_inner_lines():
+    from dataclasses import replace
+    from ren.plan import grid_lines
+    calibration = replace(SQUARE, row_lines=((0.2, 0.5), (0.7, 0.7)))
+    first_inner_row = grid_lines(LAYOUT, calibration, FRAME)[7 + 1]
+    assert first_inner_row[0] == pytest.approx((100, 580), abs=0.1)  # left end, v 0.2
+    assert first_inner_row[1] == pytest.approx((900, 400), abs=0.1)  # right end, v 0.5
+
+
+def test_inner_lines_for_another_grid_size_fall_back_to_even():
+    from dataclasses import replace
+    calibration = replace(SQUARE, col_lines=((0.3, 0.3),))
+    assert calibration.cols_for(LAYOUT) == tuple((i / 6, i / 6) for i in range(1, 6))
+
+
+def test_crossing_lines_are_not_ordered():
+    from ren.plan import lines_ordered
+    assert lines_ordered(()) and lines_ordered(((0.3, 0.4), (0.6, 0.5)))
+    assert not lines_ordered(((0.3, 0.6), (0.5, 0.5)))  # back ends cross
+    assert not lines_ordered(((0.0, 0.5),))  # on the edge

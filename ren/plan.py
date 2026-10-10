@@ -15,6 +15,7 @@ LABEL_TO_STATE: dict[str, SeatState] = {"light": "hot", "warm": "cold", "unknown
 Corner = tuple[float, float]
 Seat = tuple[int, int]  # (row, col)
 SeatSpot = tuple[Seat, tuple[float, float]]  # a seat moved off its grid spot, to (u, v)
+GridLine = tuple[float, float]  # an inner grid line, by where it meets the two far edges of the quad
 CORNER_NAMES = ("back_left", "back_right", "front_right", "front_left")
 PLAN_UV = np.float32([[0, 1], [1, 1], [1, 0], [0, 0]])  # corners in plan units
 
@@ -64,9 +65,18 @@ class Calibration:
     back_right: Corner = config.PLAN_CORNERS[1]
     front_right: Corner = config.PLAN_CORNERS[2]
     front_left: Corner = config.PLAN_CORNERS[3]
+    col_lines: tuple[GridLine, ...] = ()  # u at the front and at the back of each inner column line; () is even
+    row_lines: tuple[GridLine, ...] = ()  # v at the left and at the right of each inner row line; () is even
 
     def corners(self) -> list[Corner]:
         return [getattr(self, name) for name in CORNER_NAMES]
+
+    def cols_for(self, layout: PlanLayout) -> tuple[GridLine, ...]:
+        """Inner column lines; even ones if none are set for this many seats."""
+        return self.col_lines if len(self.col_lines) == layout.cols - 1 else even_lines(layout.cols)
+
+    def rows_for(self, layout: PlanLayout) -> tuple[GridLine, ...]:
+        return self.row_lines if len(self.row_lines) == layout.rows - 1 else even_lines(layout.rows)
 
     def with_corner(self, index: int, point: Corner) -> "Calibration":
         return replace(self, **{CORNER_NAMES[index]: point})
@@ -82,6 +92,20 @@ class Calibration:
             signs.append((bx - ax) * (cy - by) - (by - ay) * (cx - bx))
         convex = all(s > 1e-6 for s in signs) or all(s < -1e-6 for s in signs)
         return convex and abs(_area(points)) > 1e-3
+
+
+def even_lines(parts: int) -> tuple[GridLine, ...]:
+    return tuple((i / parts, i / parts) for i in range(1, parts))
+
+
+def lines_ordered(lines: tuple[GridLine, ...]) -> bool:
+    """Both ends of every line inside the edges and apart from their neighbours, so no lines cross."""
+    gap = config.PLAN_LINE_MIN_GAP
+    for end in (0, 1):
+        spots = [0.0] + [line[end] for line in lines] + [1.0]
+        if any(b - a < gap for a, b in zip(spots, spots[1:])):
+            return False
+    return True
 
 
 def _area(points: list[Corner]) -> float:
@@ -101,6 +125,28 @@ def image_to_plan(calibration: Calibration, frame_size: tuple[int, int]) -> np.n
 
 def plan_to_image(calibration: Calibration, frame_size: tuple[int, int]) -> np.ndarray:
     return np.linalg.inv(image_to_plan(calibration, frame_size))
+
+
+def _along(value: np.ndarray, across: np.ndarray, lines: tuple[GridLine, ...]) -> np.ndarray:
+    """Even plan units to seat units on one axis: each gap between lines is one seat wide."""
+    parts = len(lines) + 1
+    steps = np.linspace(0.0, 1.0, parts + 1)
+    out = value.astype(np.float64).copy()
+    for i, (x, w) in enumerate(zip(value, np.clip(across, 0.0, 1.0))):
+        if 0.0 <= x <= 1.0:
+            edges = [0.0] + [a + (b - a) * w for a, b in lines] + [1.0]
+            out[i] = np.interp(x, edges, steps)
+    return out
+
+
+def to_seat_units(layout: PlanLayout, calibration: Calibration, points: np.ndarray) -> np.ndarray:
+    """Plan points from the corner mapping, moved so the inner grid lines fall on seat borders."""
+    if len(points) == 0:
+        return points
+    u, v = points[:, 0], points[:, 1]
+    seat_u = _along(u, v, calibration.cols_for(layout))
+    seat_v = _along(v, u, calibration.rows_for(layout))
+    return np.stack([seat_u, seat_v], axis=1)
 
 
 def anchor_of(box: Box) -> tuple[float, float]:
@@ -158,7 +204,7 @@ def read_scene(
         return SeatingScene(layout, {}, (), ())
     matrix = image_to_plan(calibration, frame_size)
     anchors = np.float32([anchor_of(box) for box in boxes]).reshape(-1, 1, 2)
-    plan_points = cv2.perspectiveTransform(anchors, matrix).reshape(-1, 2)
+    plan_points = to_seat_units(layout, calibration, cv2.perspectiveTransform(anchors, matrix).reshape(-1, 2))
 
     def reading_of(person: int) -> SeatReading:
         result = results[person] if results else None
@@ -302,8 +348,10 @@ Line = tuple[tuple[float, float], tuple[float, float]]
 def grid_lines(layout: PlanLayout, calibration: Calibration, frame_size: tuple[int, int]) -> list[Line]:
     """Seat boundaries as pixel lines in the camera image."""
     matrix = plan_to_image(calibration, frame_size)
-    segments = [((i / layout.cols, 0.0), (i / layout.cols, 1.0)) for i in range(layout.cols + 1)]
-    segments += [((0.0, j / layout.rows), (1.0, j / layout.rows)) for j in range(layout.rows + 1)]
+    cols = ((0.0, 0.0),) + calibration.cols_for(layout) + ((1.0, 1.0),)
+    rows = ((0.0, 0.0),) + calibration.rows_for(layout) + ((1.0, 1.0),)
+    segments = [((front, 0.0), (back, 1.0)) for front, back in cols]
+    segments += [((0.0, left), (1.0, right)) for left, right in rows]
     points = np.float32([point for segment in segments for point in segment]).reshape(-1, 1, 2)
     mapped = cv2.perspectiveTransform(points, matrix).reshape(-1, 2)
     return [((float(a[0]), float(a[1])), (float(b[0]), float(b[1]))) for a, b in zip(mapped[0::2], mapped[1::2])]

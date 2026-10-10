@@ -252,3 +252,10 @@ def test_drawn_zones_round_trip_and_are_cleaned(tmp_path):
     loaded = load_settings(path).zones
     assert [z.name for z in loaded] == ["table 1", "zone 1"]  # duplicate renamed, tiny dropped
     assert loaded[1].bounds == (0.5, 0.5, 1.0, 0.9)
+
+
+def test_crossing_grid_lines_are_dropped(tmp_path):
+    from ren.settings import sanitize
+    bad = Calibration(col_lines=((0.6, 0.6), (0.3, 0.3)), row_lines=((0.4, 0.5), (0.7, 0.6)))
+    clean = sanitize(AppSettings(venues=(Venue("lt1", PlanLayout(3, 3), bad),), venue="lt1"))
+    assert clean.calibration.col_lines == () and clean.calibration.row_lines == bad.row_lines

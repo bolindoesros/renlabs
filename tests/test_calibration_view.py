@@ -97,3 +97,47 @@ def test_it_paints_with_and_without_a_picture(fonts):
     filled.resize(640, 360)
     filled.show_frame(np.zeros((360, 640, 3), dtype=np.uint8), [])
     assert not filled.grab().isNull()
+
+
+def _press_drag(view, start: QPoint, to: QPoint) -> None:
+    QTest.mousePress(view, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
+    view.mouseMoveEvent(_move_event(view, to))
+    QTest.mouseRelease(view, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, to)
+
+
+def line_handle(view, key) -> QPoint:
+    return dict(view.line_handles())[key].toPoint()
+
+
+def test_dragging_the_middle_of_an_inner_line_slides_the_whole_line(view):
+    announced = []
+    view.changed.connect(announced.append)
+    start = line_handle(view, ("col", 2, None))
+    _press_drag(view, start, start + QPoint(25, 0))
+    front, back = announced[-1].col_lines[2]
+    assert front > 0.5 and back > 0.5
+    assert announced[-1].col_lines[0] == pytest.approx((1 / 6, 1 / 6))  # the others stay put
+
+
+def test_dragging_one_end_of_a_line_tilts_it(view):
+    announced = []
+    view.changed.connect(announced.append)
+    start = line_handle(view, ("row", 0, 1))  # right end of the front-most inner row line
+    _press_drag(view, start, start + QPoint(0, -30))
+    left, right = announced[-1].row_lines[0]
+    assert left == pytest.approx(1 / 3) and right > 1 / 3
+
+
+def test_lines_cannot_be_dragged_across_each_other(view):
+    start = line_handle(view, ("col", 0, None))
+    _press_drag(view, start, line_handle(view, ("col", 3, None)))
+    lines = view.calibration().cols_for(PlanLayout(3, 6))
+    assert all(a[0] < b[0] and a[1] < b[1] for a, b in zip(lines, lines[1:]))
+
+
+def test_right_click_puts_a_line_back(view):
+    start = line_handle(view, ("col", 1, None))
+    _press_drag(view, start, start + QPoint(20, 0))
+    assert view.calibration().col_lines[1] != pytest.approx((2 / 6, 2 / 6))
+    QTest.mouseClick(view, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, line_handle(view, ("col", 1, None)))
+    assert view.calibration().col_lines[1] == pytest.approx((2 / 6, 2 / 6))

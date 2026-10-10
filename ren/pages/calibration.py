@@ -24,7 +24,7 @@ class CalibrationPage(QWidget):
         header = QHBoxLayout()
         self._title = title = QLabel("calibrate")
         title.setFont(fonts.text(config.UI_FONT_PX["title"], "bold"))
-        hint = QLabel("drag the four corners onto the seating area")
+        hint = QLabel("drag the corners onto the seating area, then the dots on the inner lines onto the seat borders; right-click a dot to even that line out")
         hint.setFont(fonts.text(config.UI_FONT_PX["body"]))
         hint.setStyleSheet(f"color: {config.UI_COLORS['label']};")
         header.addWidget(title)

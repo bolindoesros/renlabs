@@ -9,7 +9,7 @@ from pathlib import Path
 from jacket import config
 from ren.decision import DecisionSettings, VentSettings
 from ren.engine import ViewSettings
-from ren.plan import Calibration, PlanLayout, ZoneRect, next_zone_name
+from ren.plan import Calibration, PlanLayout, ZoneRect, lines_ordered, next_zone_name
 from ren.venues import DEFAULT_VENUE, VENUE_FIELDS, Venue, clean_name
 
 logger = logging.getLogger("ren.settings")
@@ -141,6 +141,10 @@ def _sanitize_venue(venue: Venue) -> Venue:
     if not calibration.is_valid():
         logger.warning("settings: %s calibration is not a proper quad, using the default", venue.name)
         calibration = Calibration()
+    for name in ("col_lines", "row_lines"):
+        if not lines_ordered(getattr(calibration, name)):
+            logger.warning("settings: %s %s cross or leave the grid, using even ones", venue.name, name)
+            calibration = dataclasses.replace(calibration, **{name: ()})
     vent = venue.vent
     vent = dataclasses.replace(
         vent, u=_clamp(vent.u, 0.0, 1.0, "vent u"), v=_clamp(vent.v, 0.0, 1.0, "vent v"),
