@@ -18,6 +18,7 @@ SEAT_DOT = 0.60  # occupied seat diameter, in cells
 EMPTY_DOT = 0.14  # empty seats are small grey dots
 ZONE_RADIUS_PX = 16
 EDIT_CELL_INSET = 0.12  # gap around each seat box when editing, in cells
+DRAG_START_PX = 4  # a press that moves farther than this drags the seat
 SHUT_TILT_DEG = config.VENT_CLOSED_TILT_DEG - 5  # beyond this the flaps count as shut
 BLADE_COUNT = 8  # the grille has eight blades
 
@@ -33,6 +34,8 @@ def air_line() -> QColor:
 
 class SeatingPlanView(QWidget):
     seat_toggled = Signal(int, int)  # row, col; only when editable
+    seat_moved = Signal(int, int, float, float)  # row, col, u, v; only when editable
+    seat_reset = Signal(int, int)  # back to its grid spot; only when editable
 
     def __init__(self, fonts: Fonts, editable: bool = False) -> None:
         super().__init__()
@@ -46,6 +49,9 @@ class SeatingPlanView(QWidget):
         self._zones: list[Zone] = []
         self._vent = VentSettings()
         self._layers = ViewSettings()
+        self._pressed: tuple[int, int] | None = None  # seat under the mouse button
+        self._press_at = QPointF()
+        self._drag_uv: tuple[float, float] | None = None  # live spot while dragging
         self.setMinimumSize(300, 240)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -75,6 +81,34 @@ class SeatingPlanView(QWidget):
         cell = plan.width() / self._layout.cols
         return QRectF(plan.left() + col * cell, plan.bottom() - (row + 1) * cell, cell, cell)
 
+    def seat_point(self, row: int, col: int) -> QPointF:
+        """Where a seat is drawn; follows the mouse while dragged."""
+        if self._drag_uv is not None and self._pressed == (row, col):
+            return self.point_at(*self._drag_uv)
+        return self.point_at(*self._layout.seat_uv(row, col))
+
+    def seat_rect(self, row: int, col: int) -> QRectF:
+        """A cell-sized square around the seat."""
+        cell = self.plan_rect().width() / self._layout.cols
+        rect = QRectF(0, 0, cell, cell)
+        rect.moveCenter(self.seat_point(row, col))
+        return rect
+
+    def uv_at(self, point: QPointF) -> tuple[float, float]:
+        plan = self.plan_rect()
+        return (point.x() - plan.left()) / plan.width(), (plan.bottom() - point.y()) / plan.height()
+
+    def placed_seat_at(self, point: QPointF) -> tuple[int, int] | None:
+        """The nearest seat whose box holds the point."""
+        cell = self.plan_rect().width() / self._layout.cols
+        hits = []
+        for row, col in self._layout.seats():
+            centre = self.seat_point(row, col)
+            dx, dy = abs(point.x() - centre.x()), abs(point.y() - centre.y())
+            if max(dx, dy) <= cell / 2:
+                hits.append((math.hypot(dx, dy), (row, col)))
+        return min(hits)[1] if hits else None
+
     def seat_at(self, point: QPointF) -> tuple[int, int] | None:
         """The grid cell under a widget point, seat or not."""
         plan = self.plan_rect()
@@ -86,11 +120,40 @@ class SeatingPlanView(QWidget):
         return row, col
 
     def mousePressEvent(self, event) -> None:
-        seat = self.seat_at(event.position()) if self._editable else None
-        if seat is None:
+        if not self._editable:
             super().mousePressEvent(event)
             return
-        self.seat_toggled.emit(*seat)
+        point = event.position()
+        seat = self.placed_seat_at(point)
+        if seat is not None and event.button() == Qt.MouseButton.RightButton:
+            self.seat_reset.emit(*seat)
+        elif seat is not None:
+            self._pressed, self._press_at = seat, point
+        elif event.button() == Qt.MouseButton.LeftButton:
+            cell = self.seat_at(point)
+            if cell is not None and not self._layout.has_seat(*cell):
+                self.seat_toggled.emit(*cell)  # bring a removed seat back
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._pressed is None:
+            super().mouseMoveEvent(event)
+            return
+        moved = event.position() - self._press_at
+        if self._drag_uv is None and max(abs(moved.x()), abs(moved.y())) <= DRAG_START_PX:
+            return
+        u, v = self.uv_at(event.position())
+        self._drag_uv = (min(max(u, 0.0), 1.0), min(max(v, 0.0), 1.0))
+        self.update()
+
+    def mouseReleaseEvent(self, event) -> None:
+        seat, spot = self._pressed, self._drag_uv
+        self._pressed, self._drag_uv = None, None
+        if seat is None:
+            super().mouseReleaseEvent(event)
+        elif spot is not None:
+            self.seat_moved.emit(*seat, *spot)
+        else:
+            self.seat_toggled.emit(*seat)  # a plain click removes the seat
 
     def point_at(self, u: float, v: float) -> QPointF:
         plan = self.plan_rect()
@@ -119,7 +182,7 @@ class SeatingPlanView(QWidget):
     def _paint_seats(self, painter: QPainter) -> None:
         painter.setPen(Qt.PenStyle.NoPen)
         for row, col in self._layout.seats():
-            cell = self.cell_rect(row, col)
+            cell = self.seat_rect(row, col)
             reading = self._scene.seats.get((row, col)) if self._scene else None
             if reading is None:
                 painter.setBrush(empty_seat_color())
@@ -130,23 +193,30 @@ class SeatingPlanView(QWidget):
             painter.drawEllipse(cell.center(), radius, radius)
 
     def _paint_editor(self, painter: QPainter) -> None:
-        """Every cell as a box: filled seats, dashed gaps."""
+        """Dashed boxes for removed seats, filled boxes for seats wherever they sit."""
+        painter.setPen(QPen(color("hairline"), 1.0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(self.plan_rect())
         for row in range(self._layout.rows):
             for col in range(self._layout.cols):
-                cell = self.cell_rect(row, col)
-                inset = cell.width() * EDIT_CELL_INSET
-                box = cell.adjusted(inset, inset, -inset, -inset)
-                corner = box.width() * 0.2
-                if self._layout.has_seat(row, col):
-                    painter.setPen(QPen(color("label"), 1.2))
-                    painter.setBrush(empty_seat_color())
-                else:
+                if not self._layout.has_seat(row, col):
                     painter.setPen(QPen(color("hairline").darker(130), 1.0, Qt.PenStyle.DashLine))
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.drawRoundedRect(box, corner, corner)
+                    self._paint_seat_box(painter, self.cell_rect(row, col))
+        painter.setPen(QPen(color("label"), 1.2))
+        painter.setBrush(empty_seat_color())
+        for row, col in self._layout.seats():
+            self._paint_seat_box(painter, self.seat_rect(row, col))
+
+    @staticmethod
+    def _paint_seat_box(painter: QPainter, cell: QRectF) -> None:
+        inset = cell.width() * EDIT_CELL_INSET
+        box = cell.adjusted(inset, inset, -inset, -inset)
+        corner = box.width() * 0.2
+        painter.drawRoundedRect(box, corner, corner)
 
     def _zone_rect(self, zone: Zone) -> QRectF:
-        rects = [self.cell_rect(row, col) for row, col in zone.seats()]
+        rects = [self.seat_rect(row, col) for row, col in zone.seats() if self._layout.has_seat(row, col)]
+        rects = rects or [self.cell_rect(row, col) for row, col in zone.seats()]
         combined = rects[0]
         for rect in rects[1:]:
             combined = combined.united(rect)

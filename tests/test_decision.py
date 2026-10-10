@@ -4,7 +4,7 @@ import pytest
 
 from jacket import config
 from ren.decision import (
-    DecisionMaker, DecisionSettings, NeedWeights, VentSettings, ZonePicker,
+    DecisionMaker, DecisionSettings, VentSettings, ZonePicker,
     aim_at, approach_angle,
 )
 from ren.plan import PlanLayout, SeatReading, SeatingScene
@@ -25,11 +25,6 @@ def maker(decision=INSTANT, vent=FAST_VENT) -> DecisionMaker:
     return DecisionMaker(LAYOUT, decision, vent)
 
 
-def test_need_weights_by_state():
-    weights = NeedWeights()
-    assert weights.of("hot") > weights.of("unsure") > weights.of("cold") > 0
-
-
 def test_empty_room_closes_the_vent():
     decision = maker().update(scene(), now=0.0)
     assert decision.closed and decision.target_zone is None and decision.aim is None
@@ -42,32 +37,25 @@ def test_one_hot_person_opens_the_vent_and_aims_at_their_zone():
     assert decision.aim == pytest.approx((5.5 / 6, 2.5 / 3))
 
 
-def test_a_few_hooded_people_alone_do_not_open_the_vent():
-    decision = maker().update(scene(r0c0="cold", r0c1="cold", r0c2="cold"), now=0.0)  # 3 x 0.15 < 0.5
-    assert decision.closed
+def test_one_person_in_a_jacket_opens_the_vent_too():
+    decision = maker().update(scene(r2c5="cold"), now=0.0)
+    assert not decision.closed and decision.target_zone == "back right"
 
 
-def test_hooded_people_alone_never_open_the_vent_however_many_there_are():
-    seats = {f"r{r}c{c}": "cold" for r in range(3) for c in range(6)}
-    assert maker().update(scene(**seats), now=0.0).closed
-
-
-def test_one_hot_person_among_many_hooded_people_opens_it():
-    seats = {f"r2c{c}": "cold" for c in range(6)}
-    seats["r0c0"] = "hot"
-    decision = maker().update(scene(**seats), now=0.0)
-    assert not decision.closed
-    assert decision.zone_shares["front left"] > decision.zone_shares["back left"]  # hooded seats get less per head
+def test_clothing_never_changes_where_the_air_goes():
+    jackets = maker().update(scene(r0c0="cold", r0c1="cold", r2c5="hot"), now=0.0)
+    shirts = maker().update(scene(r0c0="hot", r0c1="hot", r2c5="cold"), now=0.0)
+    assert jackets.zone_shares == shirts.zone_shares and jackets.target_zone == shirts.target_zone == "front left"
 
 
 def test_a_single_unsure_person_opens_the_vent():
     assert not maker().update(scene(r1c1="unsure"), now=0.0).closed
 
 
-def test_air_goes_to_the_hot_zone_not_the_hooded_one():
-    decision = maker().update(scene(r0c0="hot", r0c1="hot", r2c4="cold", r2c5="cold", r2c3="cold"), now=0.0)
-    assert decision.target_zone == "front left"
-    assert decision.zone_shares["front left"] > decision.zone_shares["back right"] > 0
+def test_air_goes_where_most_people_are():
+    decision = maker().update(scene(r0c0="hot", r2c4="cold", r2c5="cold"), now=0.0)  # 1 shirt vs 2 jackets
+    assert decision.target_zone == "back right"
+    assert decision.zone_shares["back right"] == pytest.approx(2 / 3)
 
 
 def test_more_heads_get_more_air():

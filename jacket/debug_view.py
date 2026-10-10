@@ -11,7 +11,7 @@ import numpy as np
 
 from jacket import config
 from jacket.camera import Camera, find_camera_index
-from jacket.classifier import ClothingClassifier
+from jacket.classifier import build_classifier
 from jacket.crop import crop_torso
 from jacket.detectors import build_detector, detect, parts_of
 from jacket.overlay import build_crop_strip, draw_box, group_text
@@ -66,7 +66,7 @@ def draw_status(frame: np.ndarray, results: list[ClothingResult], fps: float) ->
 
 def run(model_key: str, save_crops: bool, camera_index: int | None, detector_mode: str) -> None:
     detectors = {part: build_detector(part) for part in parts_of(detector_mode)}
-    pipeline = ClothingPipeline(ClothingClassifier(model_key, config.DEVICE).classify)
+    pipeline = ClothingPipeline(build_classifier(model_key, config.DEVICE).classify)
     saver = None
     if save_crops:
         saver = CropSaver(config.RAW_CROPS_DIR, config.SAVE_CROP_INTERVAL_SECONDS)
@@ -112,7 +112,7 @@ def run(model_key: str, save_crops: bool, camera_index: int | None, detector_mod
 
 def main(default_model: str = config.DEFAULT_CLIP_MODEL) -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=list(config.CLIP_MODELS), default=default_model)
+    parser.add_argument("--model", choices=list(config.CLOTHING_MODELS), default=default_model)
     parser.add_argument("--camera", type=int, help="camera index; default finds the C920 by name")
     parser.add_argument("--detector", choices=config.DETECTOR_MODES, default=config.DEFAULT_DETECTOR)
     parser.add_argument("--save-crops", action="store_true", help="write crops to data/raw/")

@@ -7,7 +7,7 @@ from pathlib import Path
 import cv2
 
 from jacket import config
-from jacket.classifier import ClothingClassifier
+from jacket.classifier import build_classifier
 
 logger = logging.getLogger("jacket.eval")  # explicit: __name__ is __main__ under -m
 
@@ -82,7 +82,7 @@ def format_summary(model_key: str, summary: EvalSummary) -> str:
 
 
 def evaluate_model(model_key: str, samples: list[Sample]) -> EvalSummary:
-    classifier = ClothingClassifier(model_key, config.DEVICE)
+    classifier = build_classifier(model_key, config.DEVICE)
     pairs: list[tuple[str, str]] = []
     for sample in samples:
         image = cv2.imread(str(sample.path))
@@ -100,7 +100,7 @@ def evaluate_model(model_key: str, samples: list[Sample]) -> EvalSummary:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--models", nargs="+", choices=list(config.CLIP_MODELS), default=list(config.CLIP_MODELS))
+    parser.add_argument("--models", nargs="+", choices=list(config.CLOTHING_MODELS), default=list(config.CLOTHING_MODELS))
     parser.add_argument("--eval-dir", type=Path, default=config.EVAL_DIR)
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING, format="%(message)s")

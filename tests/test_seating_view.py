@@ -224,3 +224,37 @@ def test_zone_share_text_is_drawn_on_the_zone_edge(fonts):
     changed = [(x, y) for x in range(box[0], box[2]) for y in range(box[1], box[3]) if with_text.pixelColor(x, y) != without.pixelColor(x, y)]
     assert len(changed) > 40  # glyph pixels appeared around the edge
 
+
+
+def editor(fonts):
+    view = SeatingPlanView(fonts, editable=True)
+    view.resize(720, 480)
+    view.set_state(LAYOUT, None, None, [], FAST)
+    events = []
+    view.seat_toggled.connect(lambda *args: events.append(("toggled", args)))
+    view.seat_moved.connect(lambda *args: events.append(("moved", args)))
+    view.seat_reset.connect(lambda *args: events.append(("reset", args)))
+    return view, events
+
+
+def test_dragging_a_seat_moves_it_instead_of_removing_it(fonts):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    view, events = editor(fonts)
+    start = view.cell_rect(0, 0).center().toPoint()
+    end = start + QPoint(40, -30)
+    QTest.mousePress(view, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view, end)
+    QTest.mouseRelease(view, Qt.MouseButton.LeftButton, pos=end)
+    (kind, (row, col, u, v)), = events
+    assert kind == "moved" and (row, col) == (0, 0)
+    assert view.point_at(u, v).toPoint() == end
+
+
+def test_right_click_snaps_a_seat_back(fonts):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    view, events = editor(fonts)
+    view.set_state(LAYOUT.with_seat_moved(1, 1, 0.5, 0.5), None, None, [], FAST)
+    QTest.mouseClick(view, Qt.MouseButton.RightButton, pos=view.point_at(0.5, 0.5).toPoint())
+    assert events == [("reset", (1, 1))]

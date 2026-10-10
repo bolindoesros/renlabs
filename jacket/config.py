@@ -38,8 +38,12 @@ CLIP_MODELS: dict[str, ClipModelSpec] = {
     "fashion": ClipModelSpec("hf-hub:Marqo/marqo-fashionSigLIP", None),
 }
 
+# Human-parsing segmenters; warm/light comes from how much bare arm shows
+SEGFORMER_MODELS: dict[str, str] = {"segformer": "mattmdjaga/segformer_b2_clothes"}
+CLOTHING_MODELS = (*CLIP_MODELS, *SEGFORMER_MODELS)  # every clothing model key
+
 CLOTHING_NAMES = {"warm": "jacket", "light": "shirt", "unknown": "unsure"}  # shown in the UI
-CLIP_MODEL_NAMES = {"clip": "CLIP ViT-B/32", "fashion": "Marqo-FashionSigLIP"}  # shown in the UI
+CLIP_MODEL_NAMES = {"clip": "CLIP ViT-B/32", "fashion": "Marqo-FashionSigLIP", "segformer": "SegFormer-B2 clothes"}  # shown in the UI
 DEFAULT_CLIP_MODEL = "fashion"  # beat clip on every test so far
 MIN_PYTHON_VERSION = (3, 10)
 
@@ -61,6 +65,13 @@ HEAD_IMAGE_SIZE = 640
 DETECTOR_MODES = ("body", "head", "both")
 DEFAULT_DETECTOR = "body"
 DETECTOR_NAMES = {"body": "YOLO11n pose", "head": "YOLOv8n head", "both": "YOLO11n-pose + YOLOv8n-head"}  # shown in the UI
+# One-click model groups on the live toolbar: name -> (detector, clothing model); "none" switches a stage off
+MODEL_PRESETS: dict[str, tuple[str, str]] = {
+    "fast": ("body", "clip"),
+    "accurate": ("both", "fashion"),
+    "segment": ("body", "segformer"),
+    "people only": ("body", "none"),
+}
 FUSE_HEAD_TOP_FRACTION = 0.45  # a head belongs to a body if its centre is in this top share
 FUSE_HEAD_SIDE_MARGIN = 0.1  # in body widths; heads may poke out a little
 
@@ -95,6 +106,15 @@ LIGHT_ITEMS = ["a t-shirt", "a short-sleeved shirt", "a tank top"]
 LOGIT_SCALE = 100.0  # CLIP's usual softmax sharpness
 WARM_THRESHOLD = 0.55  # warm_prob above this is warm
 LIGHT_THRESHOLD = 0.45  # warm_prob below this is light
+
+# SegFormer classifier; label names come from the model's config
+SEGFORMER_CLOTHING_LABELS = ("Upper-clothes", "Dress")
+SEGFORMER_SKIN_LABELS = ("Left-arm", "Right-arm", "Left-leg", "Right-leg")  # torso crops show forearms as legs
+SEGFORMER_WARM_LABELS = ("Scarf",)  # any real amount means warm
+SEGFORMER_ARM_SHARE_WARM = 0.02  # arm share at or below this is fully warm (hands only)
+SEGFORMER_ARM_SHARE_LIGHT = 0.10  # arm share at or above this is fully light; tuned on two crops only
+SEGFORMER_MIN_UPPER_FRACTION = 0.05  # less clothing+arm than this share of the crop is unsure
+SEGFORMER_MIN_SCARF_FRACTION = 0.02  # scarf share of the crop that counts
 
 # Pipeline
 CLASSIFY_INTERVAL_SECONDS = 1.0  # CLIP runs per person at most this often
@@ -171,13 +191,10 @@ PLAN_ZONE_COLS = 3
 SEAT_COLORS = {"hot": "#f28b82", "cold": "#8ab4f8", "unsure": "#fdd663"}  # pastel Google
 
 # Decision: how much each seat state wants air
-NEED_HOT = 1.0
-NEED_UNSURE = 0.5
-NEED_COLD = 0.15
 DECISION_SMOOTHING_S = 1.5  # seat demand averaging time
 DECISION_MIN_SHARE = 0.10  # zones below this share are skipped
 DECISION_MIN_DWELL_S = 6.0  # vent stays on a zone at least this long
-DECISION_CLOSE_BELOW = 0.5  # warm-bodied demand below this shuts the vent
+DECISION_CLOSE_BELOW = 0.5  # fewer seated people than this shuts the vent
 DECISION_AIM_MODE = "sweep"  # sweep shares time; focus holds top zone
 DECISION_FOCUS_MARGIN = 0.15  # focus mode: switch only if clearly better
 

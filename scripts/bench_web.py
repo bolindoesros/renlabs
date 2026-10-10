@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import cv2
 
 from jacket import config
-from jacket.classifier import ClothingClassifier
+from jacket.classifier import build_classifier
 from jacket.debug_view import draw_box
 from jacket.person_detector import PersonDetector
 from jacket.pipeline import ClothingPipeline
@@ -30,7 +30,7 @@ class ImageOutcome:
     known_people: int  # people with a non-unknown label
 
 
-def score_image(row: dict[str, str], detector: PersonDetector, classifier: ClothingClassifier, annotated_dir) -> ImageOutcome:
+def score_image(row: dict[str, str], detector: PersonDetector, classifier, annotated_dir) -> ImageOutcome:
     frame = cv2.imread(str(WEB_DIR / row["file"]))
     if frame is None:
         raise FileNotFoundError(f"cannot read {row['file']}")
@@ -76,8 +76,8 @@ def main() -> None:
         rows = list(csv.DictReader(handle))
     detector = PersonDetector(config.YOLO_WEIGHTS_PATH, config.YOLO_PERSON_CLASS_ID,
                               config.YOLO_MIN_CONFIDENCE, config.YOLO_IMAGE_SIZE, config.DEVICE)
-    for model_key in config.CLIP_MODELS:
-        classifier = ClothingClassifier(model_key, config.DEVICE)
+    for model_key in config.CLOTHING_MODELS:
+        classifier = build_classifier(model_key, config.DEVICE)
         annotated_dir = WEB_DIR / "annotated" / model_key
         annotated_dir.mkdir(parents=True, exist_ok=True)
         outcomes = [score_image(row, detector, classifier, annotated_dir) for row in rows]

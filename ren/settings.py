@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from jacket import config
-from ren.decision import DecisionSettings, NeedWeights, VentSettings
+from ren.decision import DecisionSettings, VentSettings
 from ren.engine import ViewSettings
 from ren.plan import Calibration, PlanLayout
 from ren.venues import DEFAULT_VENUE, VENUE_FIELDS, Venue, clean_name
@@ -128,7 +128,11 @@ def _sanitize_venue(venue: Venue) -> Venue:
     rows = int(_clamp(venue.layout.rows, 1, 12, "rows"))
     cols = int(_clamp(venue.layout.cols, 1, 16, "seats per row"))
     off = tuple(sorted({(r, c) for r, c in venue.layout.off if 0 <= r < rows and 0 <= c < cols}))
-    layout = PlanLayout(rows, cols, off)
+    moved = tuple(
+        ((r, c), (_clamp(u, 0.0, 1.0, "seat position"), _clamp(v, 0.0, 1.0, "seat position")))
+        for (r, c), (u, v) in dict(venue.layout.moved).items() if 0 <= r < rows and 0 <= c < cols
+    )
+    layout = PlanLayout(rows, cols, off, tuple(sorted(moved)))
     calibration = venue.calibration
     if not calibration.is_valid():
         logger.warning("settings: %s calibration is not a proper quad, using the default", venue.name)
@@ -162,16 +166,15 @@ def _sanitize_venues(settings: AppSettings) -> tuple[tuple[Venue, ...], str]:
 def sanitize(settings: AppSettings) -> AppSettings:
     """Pull every value into a safe range."""
     view, decision = settings.view, settings.decision
-    if view.model_key not in config.CLIP_MODELS:
+    if view.model_key not in config.CLOTHING_MODELS:
         logger.warning("settings: unknown model %r, using %s", view.model_key, config.DEFAULT_CLIP_MODEL)
         view = dataclasses.replace(view, model_key=config.DEFAULT_CLIP_MODEL)
     if view.detector not in config.DETECTOR_MODES:
         logger.warning("settings: unknown detector %r, using %s", view.detector, config.DEFAULT_DETECTOR)
         view = dataclasses.replace(view, detector=config.DEFAULT_DETECTOR)
-    weights = NeedWeights(*(_clamp(getattr(decision.weights, n), 0.0, 1.0, f"need {n}") for n in ("hot", "unsure", "cold")))
     aim_mode = decision.aim_mode if decision.aim_mode in ("sweep", "focus") else config.DECISION_AIM_MODE
     decision = dataclasses.replace(
-        decision, weights=weights, aim_mode=aim_mode,
+        decision, aim_mode=aim_mode,
         smoothing_s=_clamp(decision.smoothing_s, 0.0, 30.0, "smoothing"),
         min_share=_clamp(decision.min_share, 0.0, 0.5, "min share"),
         min_dwell_s=_clamp(decision.min_dwell_s, 0.0, 120.0, "min dwell"),
@@ -187,6 +190,9 @@ def migrate(raw: dict) -> dict:
     raw = dict(raw)
     if raw.pop("impact", None) is not None:
         logger.info("settings: dropped the old impact numbers")
+    if isinstance(raw.get("decision"), dict) and "weights" in raw["decision"]:
+        raw["decision"] = {k: v for k, v in raw["decision"].items() if k != "weights"}
+        logger.info("settings: dropped the clothing weights; air now follows people only")
     if "venues" not in raw and any(key in raw for key in VENUE_FIELDS):
         room = {key: raw.pop(key) for key in VENUE_FIELDS if key in raw}
         raw["venues"] = [{"name": DEFAULT_VENUE, **room}]

@@ -5,7 +5,6 @@ from dataclasses import replace
 
 import pytest
 
-from ren.decision import NeedWeights
 from ren.plan import Calibration, PlanLayout
 from ren.settings import AppSettings, load_settings, sanitize, save_settings
 from ren.venues import Venue
@@ -21,7 +20,7 @@ def test_changed_values_round_trip(tmp_path):
     path = tmp_path / "settings.json"
     changed = AppSettings(
         view=replace(AppSettings().view, model_key="clip", mirror=False),
-        decision=replace(AppSettings().decision, aim_mode="focus", weights=NeedWeights(hot=0.9, unsure=0.4, cold=0.1)),
+        decision=replace(AppSettings().decision, aim_mode="focus", min_dwell_s=12.0),
         venues=(Venue("lt1", PlanLayout(rows=5, cols=9), Calibration((0.2, 0.3), (0.8, 0.3), (0.9, 0.9), (0.1, 0.9))), Venue("lt2")),
         venue="lt2",
     )
@@ -125,10 +124,10 @@ def test_settings_are_frozen():
 def test_replace_path_changes_one_nested_field_only():
     from ren.settings import get_path, replace_path
     base = AppSettings()
-    changed = replace_path(base, ("decision", "weights", "hot"), 0.8)
-    assert changed.decision.weights.hot == 0.8 and changed.decision.weights.cold == base.decision.weights.cold
-    assert changed.layout == base.layout and base.decision.weights.hot != 0.8
-    assert get_path(changed, ("decision", "weights", "hot")) == 0.8
+    changed = replace_path(base, ("decision", "min_dwell_s"), 9.0)
+    assert changed.decision.min_dwell_s == 9.0 and changed.decision.close_below == base.decision.close_below
+    assert changed.layout == base.layout and base.decision.min_dwell_s != 9.0
+    assert get_path(changed, ("decision", "min_dwell_s")) == 9.0
 
 
 def test_replace_path_on_a_top_level_field():
@@ -223,3 +222,23 @@ def test_removed_seats_round_trip(tmp_path):
 def test_removed_seats_outside_the_grid_are_dropped():
     settings = AppSettings(venues=(Venue("lt1", PlanLayout(2, 2, ((0, 1), (5, 5)))),))
     assert sanitize(settings).layout.off == ((0, 1),)
+
+
+def test_old_clothing_weights_are_dropped_quietly(tmp_path, caplog):
+    path = tmp_path / "s.json"
+    path.write_text(json.dumps({"decision": {"weights": {"hot": 1.0, "unsure": 0.5, "cold": 0.15}, "min_dwell_s": 8.0}}))
+    with caplog.at_level(logging.WARNING):
+        loaded = load_settings(path)
+    assert loaded.decision.min_dwell_s == 8.0 and not caplog.records
+
+
+def test_moved_seats_round_trip(tmp_path):
+    path = tmp_path / "settings.json"
+    settings = AppSettings(venues=(Venue("lt1", PlanLayout(3, 6).with_seat_moved(1, 2, 0.25, 0.75)),))
+    save_settings(settings, path)
+    assert load_settings(path).layout.seat_uv(1, 2) == (0.25, 0.75)
+
+
+def test_moved_seats_outside_the_grid_or_plan_are_cleaned():
+    settings = AppSettings(venues=(Venue("lt1", PlanLayout(2, 2, (), (((0, 1), (1.5, -1.0)), ((5, 5), (0.5, 0.5))))),))
+    assert sanitize(settings).layout.moved == (((0, 1), (1.0, 0.0)),)

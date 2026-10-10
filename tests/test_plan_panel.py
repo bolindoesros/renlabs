@@ -7,9 +7,9 @@ import pytest
 pytest.importorskip("PySide6")
 from PySide6.QtWidgets import QApplication
 
-from ren.decision import Decision, NeedWeights
+from ren.decision import Decision
 from ren.plan import PlanLayout, SeatReading, SeatingScene, make_zones
-from ren.plan_panel import PlanPanel, legend_entries, status_text
+from ren.plan_panel import LEGEND, PlanPanel, status_text
 from ren.theme import load_fonts
 from ren.decision import VentSettings
 from ren.engine import ViewSettings
@@ -53,14 +53,9 @@ def test_out_of_reach_is_said_plainly():
     assert status_text(decision(reachable=False), scene(), people=1) == "aiming at front centre, out of reach"
 
 
-def test_a_shut_vent_over_only_hooded_people_says_so():
+def test_a_shut_vent_never_blames_clothing():
     text = status_text(decision(closed=True, target_zone=None), scene(("cold", "cold")), people=2)
-    assert text == "vent shut, everyone seated is in a jacket"
-
-
-def test_a_shut_vent_over_a_mixed_room_does_not_blame_clothing():
-    text = status_text(decision(closed=True, target_zone=None), scene(("cold", "unsure")), people=2)
-    assert text == "vent shut, nobody needs air"
+    assert text == "vent shut, nobody seated yet"
 
 
 def test_people_outside_the_plan_are_mentioned_alongside():
@@ -68,10 +63,8 @@ def test_people_outside_the_plan_are_mentioned_alongside():
     assert text == "aiming at front centre, 1 outside the plan"
 
 
-def test_the_legend_shows_each_state_with_its_weight():
-    assert legend_entries(NeedWeights(hot=1.0, unsure=0.5, cold=0.15)) == [
-        ("hot", "needs air 1"), ("unsure", "maybe 0.5"), ("cold", "fine 0.15")
-    ]
+def test_the_legend_names_the_clothing_colours_without_weights():
+    assert LEGEND == [("hot", "shirt"), ("unsure", "unsure"), ("cold", "jacket")]
 
 
 @pytest.fixture(scope="module")

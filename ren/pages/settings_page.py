@@ -17,6 +17,7 @@ from ren.widgets import (
 RESET_ARMED_MS = 3000
 SECTION_WIDTH_PX = 620
 SEAT_MAP_HEIGHT_PX = 300
+NONE = "none"  # dropdown entry that switches a stage off
 NAV_WIDTH_PX = 200
 Path = tuple[str, ...]
 
@@ -44,6 +45,7 @@ class DropdownRow:
     path: Path
     options: tuple[str, ...]
     labels: dict[str, str] | None = None  # shown instead of the stored keys
+    off_path: Path | None = None  # a switch that "none" turns off
 
 
 @dataclass(frozen=True)
@@ -63,23 +65,21 @@ ROOM_SECTIONS = ("seating plan", "vent")  # edit the venue in use
 SECTIONS: dict[str, list] = {
     VENUES_SECTION: [],
     "vision": [
-        DropdownRow("model", ("view", "model_key"), tuple(config.CLIP_MODELS), config.CLIP_MODEL_NAMES),
-        ToggleRow("human detection", ("view", "detect_people")),
-        DropdownRow("detector", ("view", "detector"), config.DETECTOR_MODES, config.DETECTOR_NAMES),
-        ToggleRow("clothing detection", ("view", "classify_clothing")),
+        DropdownRow("people detector", ("view", "detector"), config.DETECTOR_MODES, config.DETECTOR_NAMES,
+                    ("view", "detect_people")),
+        DropdownRow("clothing model", ("view", "model_key"), tuple(config.CLOTHING_MODELS), config.CLIP_MODEL_NAMES,
+                    ("view", "classify_clothing")),
         ToggleRow("mirror camera", ("view", "mirror")),
     ],
     "seating plan": [
         StepperRow("rows", ("layout", "rows"), 1, 12, 1),
         StepperRow("seats per row", ("layout", "cols"), 1, 16, 1),
-        SeatMapRow("click a box to remove a seat (aisle, pillar, gap); click again to bring it back"),
+        SeatMapRow("drag a seat to place it anywhere; click a seat to remove it, click its dashed box to bring it back;"
+                   " right-click a seat to snap it back to the grid"),
         ActionRow("calibration", "edit"),
     ],
     "decision": [
         DropdownRow("aim mode", ("decision", "aim_mode"), ("sweep", "focus")),
-        StepperRow("air for needs air", ("decision", "weights", "hot"), 0, 1, 0.05, 2),
-        StepperRow("air for maybe", ("decision", "weights", "unsure"), 0, 1, 0.05, 2),
-        StepperRow("air for fine", ("decision", "weights", "cold"), 0, 1, 0.05, 2),
         StepperRow("time per zone", ("decision", "min_dwell_s"), 0, 60, 1, 0, " s"),
         StepperRow("shut vent below", ("decision", "close_below"), 0, 10, 0.25, 2, " people"),
     ],
@@ -207,9 +207,23 @@ class SettingsPage(QWidget):
         return SettingRow(row.label, stepper, self._fonts)
 
     def _dropdown(self, row: DropdownRow) -> QWidget:
-        box: QComboBox = make_dropdown(list(row.options), get_path(self._settings, row.path), row.labels)
-        on_key_chosen(box, lambda value: self._edit(row.path, value))
-        self._refreshers.append(lambda s: select_key(box, get_path(s, row.path)))
+        options = list(row.options) + ([NONE] if row.off_path else [])
+
+        def shown(settings: AppSettings) -> str:
+            off = row.off_path is not None and not get_path(settings, row.off_path)
+            return NONE if off else get_path(settings, row.path)
+
+        def chosen(value: str) -> None:
+            if row.off_path is None:
+                self._edit(row.path, value)
+            elif value == NONE:
+                self._edit(row.off_path, False)
+            else:
+                self._apply(replace_path(replace_path(self._settings, row.off_path, True), row.path, value))
+
+        box: QComboBox = make_dropdown(options, shown(self._settings), row.labels)
+        on_key_chosen(box, chosen)
+        self._refreshers.append(lambda s: select_key(box, shown(s)))
         return SettingRow(row.label, box, self._fonts)
 
     def _seat_map(self, row: SeatMapRow) -> QWidget:
@@ -226,6 +240,14 @@ class SettingsPage(QWidget):
         view.setFixedHeight(SEAT_MAP_HEIGHT_PX)
         view.seat_toggled.connect(
             lambda r, c: self._apply(replace_path(self._settings, ("layout",), self._settings.layout.with_seat_toggled(r, c)))
+        )
+        view.seat_moved.connect(
+            lambda r, c, u, v: self._apply(
+                replace_path(self._settings, ("layout",), self._settings.layout.with_seat_moved(r, c, u, v))
+            )
+        )
+        view.seat_reset.connect(
+            lambda r, c: self._apply(replace_path(self._settings, ("layout",), self._settings.layout.with_seat_reset(r, c)))
         )
 
         def refresh(settings: AppSettings) -> None:

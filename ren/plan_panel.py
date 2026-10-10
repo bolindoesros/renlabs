@@ -3,14 +3,15 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QLabel, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget
 
 from jacket import config
-from ren.decision import Decision, NeedWeights, VentSettings
+from ren.decision import Decision, VentSettings
 from ren.engine import ViewSettings
-from ren.plan import NEED_NAMES, PlanLayout, SeatingScene, Zone
+from ren.plan import PlanLayout, SeatingScene, Zone
 from ren.seating_view import SeatingPlanView
 from ren.theme import Fonts
 from ren.widgets import TextButton, Legend
 
-RULE_TIP = "people in shirts need air; people in jackets are fine and get less"
+RULE_TIP = "air follows people; clothing is shown but does not steer it"
+LEGEND = [("hot", config.CLOTHING_NAMES["light"]), ("unsure", config.CLOTHING_NAMES["unknown"]), ("cold", config.CLOTHING_NAMES["warm"])]
 PHASE_VERBS = {"turning": "turning to", "opening": "opening towards", "aiming": "aiming at"}
 
 
@@ -22,17 +23,11 @@ def status_text(decision: Decision, scene: SeatingScene, people: int) -> str:
         return "everyone is outside the plan, check calibration"
     outside = f", {scene.off_plan} outside the plan" if scene.off_plan else ""
     if decision.closed:
-        everyone_cold = all(reading.state == "cold" for reading in scene.seats.values())
-        reason = "everyone seated is in a jacket" if everyone_cold else "nobody needs air"
-        return f"vent shut, {reason}{outside}"
+        return f"vent shut, nobody seated yet{outside}"  # smoothing lags a moment behind new arrivals
     text = f"{PHASE_VERBS.get(decision.phase, 'aiming at')} {decision.target_zone}"
     if not decision.reachable:
         text += ", out of reach"
     return text + outside
-
-
-def legend_entries(weights: NeedWeights) -> list[tuple[str, str]]:
-    return [(state, f"{NEED_NAMES[state]} {getattr(weights, state):g}") for state in ("hot", "unsure", "cold")]
 
 
 def shrinkable(label: QLabel) -> QLabel:
@@ -67,9 +62,9 @@ class PlanPanel(QWidget):
         self._stack.addWidget(self._view)
         self._stack.addWidget(failed)
 
-        self._legend = Legend(legend_entries(NeedWeights()), fonts)
+        self._legend = Legend(LEGEND, fonts)
         self._legend.setToolTip(RULE_TIP)
-        legend_caption = QLabel("air per seat")
+        legend_caption = QLabel("clothing")
         legend_caption.setFont(fonts.text(config.UI_FONT_PX["small"], "medium"))
         legend_caption.setStyleSheet(f"color: {config.UI_COLORS['muted']};")
         self._status = shrinkable(QLabel())
@@ -95,9 +90,6 @@ class PlanPanel(QWidget):
         zones: list[Zone], vent: VentSettings, layers: ViewSettings,
     ) -> None:
         self._view.set_state(layout, scene, decision, zones, vent, layers)
-
-    def set_weights(self, weights: NeedWeights) -> None:
-        self._legend.set_entries(legend_entries(weights))
 
     def set_status(self, text: str) -> None:
         self._status.setText(text)

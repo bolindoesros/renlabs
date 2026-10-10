@@ -58,6 +58,7 @@ class LivePage(QWidget):
         self._toolbar.venue_add_requested.connect(self.venue_add_requested)
         self._toolbar.model_chosen.connect(self._choose_model)
         self._toolbar.detector_chosen.connect(self._choose_detector)
+        self._toolbar.preset_chosen.connect(self._choose_preset)
         self._toolbar.layer_toggled.connect(lambda key, shown: self._edit(("view", key), shown))
         self._toolbar.panel_toggled.connect(self._area.set_visible)
         self._area.changed.connect(self._sync_panels)
@@ -99,7 +100,6 @@ class LivePage(QWidget):
         self._toolbar.set_view(settings.view)
         self._toolbar.set_venues(settings.venue_names(), settings.venue)
         self._area.set_visible("crops", settings.view.show_crops)  # remembered between runs
-        self._plan_panel.set_weights(settings.decision.weights)
         self._grid_cache = None
         if self._plan_error is not None:
             self._retry_plan()  # a settings change may have fixed it
@@ -172,6 +172,16 @@ class LivePage(QWidget):
     def _choose_model(self, key: str) -> None:
         on = {"classify_clothing": False} if key == NONE else {"classify_clothing": True, "model_key": key}
         self.changed.emit(replace(self._settings, view=replace(self._settings.view, **on)))
+
+    def _choose_preset(self, name: str) -> None:
+        """Detector and clothing model in one change."""
+        detector, model = config.MODEL_PRESETS[name]
+        view = replace(self._settings.view, detect_people=detector != NONE, classify_clothing=model != NONE)
+        if detector != NONE:
+            view = replace(view, detector=detector)
+        if model != NONE:
+            view = replace(view, model_key=model)
+        self.changed.emit(replace(self._settings, view=view))
 
     def _edit(self, path: tuple[str, ...], value) -> None:
         self.changed.emit(replace_path(self._settings, path, value))

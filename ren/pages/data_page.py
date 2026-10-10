@@ -158,7 +158,7 @@ class DataPage(QWidget):
         self.photo_target = DropTarget(PHOTO_TEXT, fonts, 100)
         self.photo_target.setToolTip(PHOTO_TIP)
         self.photo_target.dropped.connect(lambda paths: self.photo_chosen.emit(paths[0]))
-        browse = TextButton("choose", fonts)
+        browse = TextButton("select", fonts)
         browse.setToolTip(PHOTO_TIP)
         browse.clicked.connect(self._browse)
         photo.addWidget(self.photo_target)

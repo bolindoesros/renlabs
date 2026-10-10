@@ -141,3 +141,20 @@ def test_nobody_is_seated_in_a_removed_seat():
     gap = LAYOUT.with_seat_toggled(1, 2)
     scene = read_scene([person(*seat_pixel(1, 2))], [LIGHT], FRAME, gap, SQUARE)
     assert (1, 2) not in scene.seats
+
+
+def test_seats_sit_mid_cell_until_moved():
+    assert LAYOUT.seat_uv(0, 0) == pytest.approx((1 / 12, 1 / 6))
+    moved = LAYOUT.with_seat_moved(0, 0, 0.3, 0.4)
+    assert moved.seat_uv(0, 0) == (0.3, 0.4) and moved.seat_uv(0, 1) == LAYOUT.seat_uv(0, 1)
+    assert moved.with_seat_reset(0, 0) == LAYOUT
+
+
+def test_moved_seats_are_clamped_to_the_plan():
+    assert LAYOUT.with_seat_moved(1, 1, -0.5, 1.5).seat_uv(1, 1) == (0.0, 1.0)
+
+
+def test_a_person_is_matched_to_a_moved_seat():
+    layout = LAYOUT.with_seat_moved(2, 5, 0.5, 0.5)  # back-right seat now mid-room
+    scene = read_scene([person(500, 400)], [LIGHT], FRAME, layout, SQUARE)
+    assert list(scene.seats) == [(2, 5)]

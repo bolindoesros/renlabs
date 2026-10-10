@@ -18,7 +18,6 @@ from ren.pages.calibration import CalibrationPage
 from ren.pages.live import LivePage
 from ren.pages.settings_page import SECTIONS, SettingsPage
 from ren.plan import Calibration, PlanLayout
-from ren.decision import NeedWeights
 from ren.settings import AppSettings, replace_path
 from ren.theme import load_fonts
 from ren.widgets import TextButton, SwitchRow, Stepper
@@ -84,10 +83,11 @@ def test_an_empty_view_says_no_one_is_there(fonts):
     assert status(page) == "no one in view"
 
 
-def test_only_hooded_people_leave_the_vent_shut_and_say_why(fonts):
-    page, _ = live_page(fonts)
-    page.show_result(result([person(*seat_pixel(0, 0)), person(*seat_pixel(0, 1))], [WARM, WARM]))
-    assert status(page) == "vent shut, everyone seated is in a jacket"
+def test_people_in_jackets_get_air_like_anyone_else(fonts):
+    clock = Clock()
+    page, _ = live_page(fonts, clock)
+    settle(page, clock, [person(*seat_pixel(0, 0)), person(*seat_pixel(0, 1))], [WARM, WARM])
+    assert status(page).startswith("aiming at front left")
 
 
 def test_people_outside_the_plan_are_marked_and_explained(fonts):
@@ -114,12 +114,9 @@ def test_the_seat_grid_follows_its_layer(fonts):
     assert page._camera._grid == []
 
 
-def test_the_legend_shows_the_weights_the_algorithm_uses(fonts):
-    page, settings = live_page(fonts)
-    assert [text for _, text in page._plan_panel._legend._entries] == ["needs air 1", "maybe 0.5", "fine 0.15"]
-    heavier = replace(settings, decision=replace(settings.decision, weights=NeedWeights(hot=0.9, unsure=0.4, cold=0.1)))
-    page.set_settings(heavier)
-    assert [text for _, text in page._plan_panel._legend._entries] == ["needs air 0.9", "maybe 0.4", "fine 0.1"]
+def test_the_legend_only_names_the_clothing(fonts):
+    page, _ = live_page(fonts)
+    assert [text for _, text in page._plan_panel._legend._entries] == ["shirt", "unsure", "jacket"]
 
 
 def test_display_only_changes_keep_the_vent_state(fonts):
@@ -265,21 +262,21 @@ def test_a_stepper_click_announces_the_new_settings(fonts):
     assert isinstance(announced[-1].layout.rows, int)  # whole-number fields stay whole
 
 
-def test_nested_weights_can_be_edited(fonts):
+def test_nested_decision_values_can_be_edited(fonts):
     page = SettingsPage(fonts, AppSettings())
     announced = []
     page.changed.connect(announced.append)
-    hot = find(page, "decision", Stepper)[0]
-    QTest.mouseClick(hot._less, Qt.MouseButton.LeftButton)
-    assert announced[-1].decision.weights.hot == pytest.approx(0.95)
-    assert announced[-1].decision.weights.cold == AppSettings().decision.weights.cold
+    dwell = find(page, "decision", Stepper)[0]
+    QTest.mouseClick(dwell._less, Qt.MouseButton.LeftButton)
+    assert announced[-1].decision.min_dwell_s == AppSettings().decision.min_dwell_s - 1
+    assert announced[-1].decision.close_below == AppSettings().decision.close_below
 
 
 def test_the_model_dropdown_announces_the_choice(fonts):
     page = SettingsPage(fonts, AppSettings())
     announced = []
     page.changed.connect(announced.append)
-    dropdown = find(page, "vision", QComboBox)[0]
+    dropdown = find(page, "vision", QComboBox)[1]
     dropdown.activated.emit(dropdown.findData("clip"))
     assert announced[-1].view.model_key == "clip"
 
@@ -288,7 +285,7 @@ def test_the_detector_dropdown_announces_the_choice(fonts):
     page = SettingsPage(fonts, AppSettings())
     announced = []
     page.changed.connect(announced.append)
-    detector = find(page, "vision", QComboBox)[1]
+    detector = find(page, "vision", QComboBox)[0]
     assert detector.itemText(detector.findData("both")) == "YOLO11n-pose + YOLOv8n-head"
     detector.activated.emit(detector.findData("both"))
     assert announced[-1].view.detector == "both"
@@ -313,7 +310,7 @@ def test_a_toggle_announces_the_change(fonts):
     announced = []
     page.changed.connect(announced.append)
     toggles = find(page, "vision", SwitchRow)
-    toggles[2].setChecked(not toggles[2].isChecked())  # human detection, clothing detection, mirror camera
+    toggles[0].setChecked(not toggles[0].isChecked())  # mirror camera
     assert announced[-1].view.mirror is (not AppSettings().view.mirror)
 
 
@@ -324,7 +321,7 @@ def test_settings_changed_elsewhere_refresh_without_announcing(fonts):
     page.set_settings(replace(replace_path(AppSettings(), ("layout",), PlanLayout(5, 9)), view=replace(AppSettings().view, mirror=True)))
     assert announced == []
     assert find(page, "seating plan", Stepper)[0].value() == 5
-    assert find(page, "vision", SwitchRow)[2].isChecked()
+    assert find(page, "vision", SwitchRow)[0].isChecked()
 
 
 def test_reset_needs_two_clicks(fonts):
@@ -588,3 +585,53 @@ def test_hiding_the_crops_panel_stops_cutting_crops(fonts):
     assert announced[-1].view.show_crops is False
     page.set_settings(announced[-1])
     assert not page._area.is_visible("crops")
+
+
+def test_none_in_settings_switches_a_stage_off_and_a_model_turns_it_back_on(fonts):
+    page = SettingsPage(fonts, AppSettings())
+    announced = []
+    page.changed.connect(announced.append)
+    detector, model = find(page, "vision", QComboBox)[:2]
+    detector.activated.emit(detector.findData("none"))
+    page.set_settings(announced[-1])  # as the window does after a change
+    assert announced[-1].view.detect_people is False and detector.currentData() == "none"
+    detector.activated.emit(detector.findData("head"))
+    assert announced[-1].view.detect_people is True and announced[-1].view.detector == "head"
+    model.activated.emit(model.findData("none"))
+    assert announced[-1].view.classify_clothing is False
+
+
+def test_the_toolbar_none_tick_gives_the_plain_stream_and_back(fonts):
+    page, _ = live_page(fonts, detector="head")
+    announced = []
+    page.changed.connect(announced.append)
+    page._toolbar._no_detector.trigger()
+    assert announced[-1].view.detect_people is False
+    assert not any(a.isChecked() for a in page._toolbar._detector_parts.values())
+    page.set_settings(announced[-1])
+    page._toolbar._no_detector.trigger()  # untick none: back to the last detector
+    assert announced[-1].view.detect_people is True and announced[-1].view.detector == "head"
+
+
+def test_a_preset_sets_detector_and_model_together_and_lights_up(fonts):
+    page, _ = live_page(fonts)
+    announced = []
+    page.changed.connect(announced.append)
+    page._toolbar._presets["accurate"].click()
+    view = announced[-1].view
+    assert (view.detect_people, view.detector, view.classify_clothing, view.model_key) == (True, "both", True, "fashion")
+    page.set_settings(announced[-1])
+    assert page._toolbar._presets["accurate"].isChecked() and not page._toolbar._presets["fast"].isChecked()
+
+
+def test_people_only_preset_switches_clothing_off(fonts):
+    page, _ = live_page(fonts)
+    announced = []
+    page.changed.connect(announced.append)
+    page._toolbar._presets["people only"].click()
+    assert announced[-1].view.detect_people is True and announced[-1].view.classify_clothing is False
+
+
+def test_no_preset_lights_up_for_an_unlisted_mix(fonts):
+    page, settings = live_page(fonts, detector="head", model_key="clip")
+    assert not any(button.isChecked() for button in page._toolbar._presets.values())

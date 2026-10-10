@@ -113,3 +113,9 @@ def test_venue_list_updates_quietly(toolbar):
     toolbar.set_venues(["lt1", "lt2", "lt3"], "lt3")
     assert toolbar.venue() == "lt3" and chosen == []
     assert [toolbar._venue.itemText(i) for i in range(toolbar._venue.count())] == ["lt1", "lt2", "lt3"]
+
+
+def test_every_preset_names_known_choices():
+    from ren.toolbar import NONE
+    for detector, model in config.MODEL_PRESETS.values():
+        assert detector in (*config.DETECTOR_MODES, NONE) and model in (*config.CLOTHING_MODELS, NONE)

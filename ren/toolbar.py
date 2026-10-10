@@ -26,6 +26,11 @@ def detector_mode(ticked: tuple[str, ...]) -> str:
     return "both" if len(ticked) == len(DETECTOR_PARTS) else ticked[0]
 
 
+def preset_of(detector: str, model: str) -> str | None:
+    """The preset matching these choices, if any."""
+    return next((name for name, pair in config.MODEL_PRESETS.items() if pair == (detector, model)), None)
+
+
 def detector_label(mode: str) -> str:
     return NO_DETECTOR_LABEL if mode == NONE else config.DETECTOR_NAMES[mode]
 
@@ -101,6 +106,7 @@ class Toolbar(QWidget):
     venue_add_requested = Signal()
     model_chosen = Signal(str)
     detector_chosen = Signal(str)
+    preset_chosen = Signal(str)  # a MODEL_PRESETS name
     layer_toggled = Signal(str, bool)  # ViewSettings field, shown
     panel_toggled = Signal(str, bool)  # panel name, shown
 
@@ -115,7 +121,7 @@ class Toolbar(QWidget):
         self._venue.textActivated.connect(self.venue_chosen)
         self._add_venue = IconButton("add", "add a venue (copies this one)", fonts)
         self._add_venue.clicked.connect(self.venue_add_requested)
-        self._model = make_dropdown([*config.CLIP_MODELS, NONE], model_key, config.CLIP_MODEL_NAMES)
+        self._model = make_dropdown([*config.CLOTHING_MODELS, NONE], model_key, config.CLIP_MODEL_NAMES)
         self._model.setToolTip("clothing model, or none to only find people")
         on_key_chosen(self._model, self.model_chosen.emit)
         self._detector = MenuButton("")  # tick body, head, or both
@@ -129,7 +135,21 @@ class Toolbar(QWidget):
             action.setCheckable(True)
             action.toggled.connect(self._on_detector_toggled)
             self._detector_parts[part] = action
+        detector_menu.addSeparator()
+        self._no_detector = detector_menu.addAction(NONE)  # the plain stream
+        self._no_detector.setCheckable(True)
+        self._no_detector.toggled.connect(self._on_no_detector_toggled)
+        self._last_detector = view.detector  # what ticking off none goes back to
         self.set_detector(view.detector)
+        self._presets: dict[str, QPushButton] = {}
+        for name, (detector, model) in config.MODEL_PRESETS.items():
+            button = QPushButton(name)
+            button.setObjectName("presetButton")
+            button.setCheckable(True)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setToolTip(f"{detector_label(detector)} + {config.CLIP_MODEL_NAMES.get(model, 'no clothing model')}")
+            button.clicked.connect(lambda _, n=name: self._on_preset(n))
+            self._presets[name] = button
         self._view_button = MenuButton("layers")
         self._view_button.setFixedWidth(VIEW_BUTTON_WIDTH_PX)
         self._menu = StickyMenu(self._view_button)
@@ -143,6 +163,10 @@ class Toolbar(QWidget):
         layout.addSpacing(20)
         for widget in (self._caption("models", fonts), self._detector, self._model):  # people, then clothing
             layout.addWidget(widget)
+        layout.addSpacing(20)
+        layout.addWidget(self._caption("presets", fonts))
+        for button in self._presets.values():
+            layout.addWidget(button)
         layout.addSpacing(20)
         layout.addWidget(self._caption("view", fonts))
         layout.addWidget(self._view_button)
@@ -189,6 +213,7 @@ class Toolbar(QWidget):
         self.set_detector(view.detector if view.detect_people else NONE)
         self.set_model(view.model_key if view.classify_clothing else NONE)
         self._model.setEnabled(view.detect_people)  # clothing needs people
+        self._show_preset()
 
     def venue(self) -> str:
         return self._venue.currentText()
@@ -208,6 +233,9 @@ class Toolbar(QWidget):
     def set_detector(self, mode: str) -> None:
         for part, action in self._detector_parts.items():
             self._quietly(action, mode in (part, "both"))
+        self._quietly(self._no_detector, mode == NONE)
+        if mode != NONE:
+            self._last_detector = mode
         self._detector_mode = mode
         self._detector.setText(detector_label(mode))
         self._detector.fit_text()
@@ -219,8 +247,28 @@ class Toolbar(QWidget):
         self.set_detector(self.detector())
         self.detector_chosen.emit(self._detector_mode)
 
+    def _on_no_detector_toggled(self, ticked: bool) -> None:
+        self.set_detector(NONE if ticked else self._last_detector)
+        self.detector_chosen.emit(self._detector_mode)
+
     def set_model(self, model_key: str) -> None:
         select_key(self._model, model_key)
+
+    def preset(self) -> str | None:
+        return preset_of(self._detector_mode, self.model())
+
+    def _show_preset(self) -> None:
+        """Light up the preset the current choices match."""
+        active = self.preset()
+        for name, button in self._presets.items():
+            button.setChecked(name == active)
+
+    def _on_preset(self, name: str) -> None:
+        detector, model = config.MODEL_PRESETS[name]
+        self.set_detector(detector)
+        self.set_model(model)
+        self._show_preset()
+        self.preset_chosen.emit(name)
 
     def set_panel_visible(self, panel: str, visible: bool) -> None:
         self._quietly(self._actions[panel], visible)

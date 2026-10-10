@@ -91,6 +91,19 @@ def make_clip_check(model_key: str) -> Callable[[], str]:
     return check_clip_weights
 
 
+def make_segformer_check(model_key: str) -> Callable[[], str]:
+    def check_segformer_weights() -> str:
+        from transformers import AutoImageProcessor, AutoModelForSemanticSegmentation
+
+        repo = config.SEGFORMER_MODELS[model_key]
+        AutoImageProcessor.from_pretrained(repo)
+        model = AutoModelForSemanticSegmentation.from_pretrained(repo)
+        parameter_count = sum(p.numel() for p in model.parameters())
+        return f"{repo}, {parameter_count / 1e6:.0f}M params"
+
+    return check_segformer_weights
+
+
 def run_check(name: str, check: Callable[[], str]) -> CheckResult:
     # Broad catch on purpose; report every failure
     try:
@@ -112,6 +125,7 @@ def main() -> int:
         ("yolo weights", check_yolo_weights),
     ]
     checks += [(f"clip weights [{key}]", make_clip_check(key)) for key in config.CLIP_MODELS]
+    checks += [(f"segformer weights [{key}]", make_segformer_check(key)) for key in config.SEGFORMER_MODELS]
 
     results = [run_check(name, check) for name, check in checks]
     for result in results:

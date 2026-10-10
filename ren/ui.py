@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 
 from jacket import config  # noqa: E402
 from jacket.camera import Camera, find_camera_index  # noqa: E402
-from jacket.classifier import ClothingClassifier  # noqa: E402
+from jacket.classifier import build_classifier  # noqa: E402
 from jacket.detectors import build_detector  # noqa: E402
 from jacket.pipeline import ClothingPipeline  # noqa: E402
 from jacket.sources import FrameSource, ImageSource, VideoFileSource  # noqa: E402
@@ -366,13 +366,13 @@ def close_on_signals(window: QWidget) -> None:
 def build_engine() -> FrameEngine:
     """Cheap: models load in the worker."""
     return FrameEngine(
-        build_detector, lambda key: ClothingPipeline(ClothingClassifier(key, config.DEVICE).classify)
+        build_detector, lambda key: ClothingPipeline(build_classifier(key, config.DEVICE).classify)
     )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=list(config.CLIP_MODELS), help="override the saved model")
+    parser.add_argument("--model", choices=list(config.CLOTHING_MODELS), help="override the saved model")
     parser.add_argument("--detector", choices=config.DETECTOR_MODES, help="override the saved detector")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--camera", type=int, help="camera index; default finds the C920 by name")

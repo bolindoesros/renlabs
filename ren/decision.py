@@ -1,29 +1,18 @@
 """From seats to a vent command."""
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from jacket import config
-from ren.plan import PlanLayout, SeatingScene, SeatState, Zone, make_zones
+from ren.plan import PlanLayout, SeatingScene, Zone, make_zones
 
 MIN_AIM_DISTANCE_M = 0.05  # closer than this, the vent points straight down
 MAX_STEP_S = 1.0  # longer gaps between updates count as this
 
 
 @dataclass(frozen=True)
-class NeedWeights:
-    """How much a seat wants air, per state."""
-
-    hot: float = config.NEED_HOT
-    unsure: float = config.NEED_UNSURE
-    cold: float = config.NEED_COLD
-
-    def of(self, state: SeatState) -> float:
-        return getattr(self, state)
-
-
-@dataclass(frozen=True)
 class DecisionSettings:
-    weights: NeedWeights = field(default_factory=NeedWeights)
+    """Air follows people: every seated person counts the same, whatever they wear."""
+
     aim_mode: str = config.DECISION_AIM_MODE  # "sweep" or "focus"
     smoothing_s: float = config.DECISION_SMOOTHING_S
     min_share: float = config.DECISION_MIN_SHARE
@@ -71,7 +60,7 @@ class Decision:
 
 
 def seat_center(row: int, col: int, layout: PlanLayout) -> tuple[float, float]:
-    return (col + 0.5) / layout.cols, (row + 0.5) / layout.rows
+    return layout.seat_uv(row, col)
 
 
 def to_meters(u: float, v: float, layout: PlanLayout, vent: VentSettings) -> tuple[float, float]:
@@ -188,8 +177,7 @@ class DecisionMaker:
         self._mirrored = mirrored
         self._zones = zones if zones is not None else make_zones(layout)
         self._picker = ZonePicker(decision)
-        self._need = {(r, c): 0.0 for r in range(layout.rows) for c in range(layout.cols)}
-        self._wanting = dict(self._need)  # need from seats that are not cold
+        self._need = {(r, c): 0.0 for r in range(layout.rows) for c in range(layout.cols)}  # smoothed occupancy
         self._rotation = 0.0
         self._tilt = config.VENT_CLOSED_TILT_DEG  # starts shut
         self._last: float | None = None
@@ -204,18 +192,14 @@ class DecisionMaker:
             1 - math.exp(-dt / self._decision.smoothing_s)
         )
         self._last = now
-        weights = self._decision.weights
         for seat in self._need:
-            reading = scene.seats.get(seat)
-            wanted = weights.of(reading.state) if reading else 0.0
-            from_warm_bodies = wanted if reading and reading.state != "cold" else 0.0
-            self._need[seat] += alpha * (wanted - self._need[seat])
-            self._wanting[seat] += alpha * (from_warm_bodies - self._wanting[seat])
+            occupied = 1.0 if seat in scene.seats else 0.0  # clothing never steers the air
+            self._need[seat] += alpha * (occupied - self._need[seat])
 
         demand = {zone.name: sum(self._need[seat] for seat in zone.seats()) for zone in self._zones}
         total = sum(demand.values())
         shares = {name: (value / total if total > 0 else 0.0) for name, value in demand.items()}
-        closed = sum(self._wanting.values()) < self._decision.close_below  # hooded people alone never open it
+        closed = sum(self._need.values()) < self._decision.close_below  # nobody seated
 
         zone_name = None if closed else self._picker.pick(shares, now, self._settled)
         if closed:

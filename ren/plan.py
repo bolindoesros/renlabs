@@ -11,10 +11,10 @@ from jacket.types import Box, ClothingResult
 
 SeatState = Literal["hot", "cold", "unsure"]
 LABEL_TO_STATE: dict[str, SeatState] = {"light": "hot", "warm": "cold", "unknown": "unsure"}
-NEED_NAMES: dict[SeatState, str] = {"hot": "needs air", "unsure": "maybe", "cold": "fine"}  # shown in the UI
 
 Corner = tuple[float, float]
 Seat = tuple[int, int]  # (row, col)
+SeatSpot = tuple[Seat, tuple[float, float]]  # a seat moved off its grid spot, to (u, v)
 CORNER_NAMES = ("back_left", "back_right", "front_right", "front_left")
 PLAN_UV = np.float32([[0, 1], [1, 1], [1, 0], [0, 0]])  # corners in plan units
 
@@ -26,6 +26,7 @@ class PlanLayout:
     rows: int = config.PLAN_ROWS
     cols: int = config.PLAN_COLS
     off: tuple[Seat, ...] = ()  # cells with no seat: aisles, pillars, gaps
+    moved: tuple[SeatSpot, ...] = ()  # hand-placed seats; the rest sit mid-cell
 
     def has_seat(self, row: int, col: int) -> bool:
         return 0 <= row < self.rows and 0 <= col < self.cols and (row, col) not in self.off
@@ -40,6 +41,19 @@ class PlanLayout:
     def with_seat_toggled(self, row: int, col: int) -> "PlanLayout":
         """Remove a seat, or bring a removed one back."""
         return replace(self, off=tuple(sorted(set(self.off) ^ {(row, col)})))
+
+    def seat_uv(self, row: int, col: int) -> tuple[float, float]:
+        """Plan position: u left to right, v front to back."""
+        return dict(self.moved).get((row, col), ((col + 0.5) / self.cols, (row + 0.5) / self.rows))
+
+    def with_seat_moved(self, row: int, col: int, u: float, v: float) -> "PlanLayout":
+        spots = dict(self.moved)
+        spots[(row, col)] = (min(max(u, 0.0), 1.0), min(max(v, 0.0), 1.0))
+        return replace(self, moved=tuple(sorted(spots.items())))
+
+    def with_seat_reset(self, row: int, col: int) -> "PlanLayout":
+        """Put a seat back in the middle of its cell."""
+        return replace(self, moved=tuple(spot for spot in self.moved if spot[0] != (row, col)))
 
 
 @dataclass(frozen=True)
@@ -133,7 +147,8 @@ def read_scene(
     pairs = []
     for person, (u, v) in enumerate(plan_points):
         for row, col in layout.seats():
-            distance = math.hypot(u * layout.cols - (col + 0.5), v * layout.rows - (row + 0.5))
+            seat_u, seat_v = layout.seat_uv(row, col)
+            distance = math.hypot((u - seat_u) * layout.cols, (v - seat_v) * layout.rows)
             if distance <= radius:
                 pairs.append((distance, person, row, col))
     pairs.sort()

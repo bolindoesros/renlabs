@@ -272,7 +272,6 @@ def test_the_data_page_is_in_the_nav(window):
 
 
 def test_a_photo_still_works_when_the_camera_fails(app):
-    import threading
     import time as clock
     from ren.ui import FrameWorker
 
@@ -289,8 +288,7 @@ def test_a_photo_still_works_when_the_camera_fails(app):
     failures, frames = [], []
     worker.failed.connect(failures.append)
     worker.frame_ready.connect(lambda result, fps: frames.append(result))
-    thread = threading.Thread(target=worker.run)
-    thread.start()
+    worker.start()  # a real QThread, as in the app
     deadline = clock.monotonic() + 5
     while not failures and clock.monotonic() < deadline:
         app.processEvents()  # signals from the worker thread are queued
@@ -300,5 +298,5 @@ def test_a_photo_still_works_when_the_camera_fails(app):
         app.processEvents()
         clock.sleep(0.01)
     worker.stop()
-    thread.join(5)
+    assert worker.wait(5000)
     assert failures == ["RuntimeError: no camera"] and frames

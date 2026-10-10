@@ -76,3 +76,12 @@ class ClothingClassifier:
             self._model_key, warm_prob, result.label, self._prompts[best], probabilities[best],
         )
         return result
+
+
+def build_classifier(model_key: str, device: str):
+    """Any clothing model by key; segformer imports lazily."""
+    if model_key in config.SEGFORMER_MODELS:
+        from jacket.segformer_classifier import SegformerClassifier
+
+        return SegformerClassifier(model_key, device)
+    return ClothingClassifier(model_key, device)
