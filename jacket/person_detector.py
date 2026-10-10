@@ -42,9 +42,13 @@ def torso_top_row(
 
 
 def resolve_device(device: str) -> str:
-    if device == "auto":
-        return "cuda" if torch.cuda.is_available() else "cpu"
-    return device
+    if device != "auto":
+        return device
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():  # Apple Silicon GPU
+        return "mps"
+    return "cpu"
 
 
 class PersonDetector:

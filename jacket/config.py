@@ -8,6 +8,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 
 # Camera
 CAMERA_NAME_HINT = "C920"  # found by name because index numbers shift
+CAMERA_DEFAULT_INDEX = 0  # Windows and macOS cannot look up names
 CAMERA_WIDTH = 1280
 CAMERA_HEIGHT = 720
 CAMERA_WARMUP_FRAMES = 5  # first frames are often dark
@@ -43,7 +44,7 @@ MIN_PYTHON_VERSION = (3, 10)
 # Person detector tuning
 YOLO_MIN_CONFIDENCE = 0.35
 YOLO_IMAGE_SIZE = 640
-DEVICE = "auto"  # "auto" picks cuda when available, else cpu
+DEVICE = "auto"  # cuda, then Apple mps, then cpu
 
 # Debug window
 DEBUG_WINDOW_NAME = "smart-vent debug"

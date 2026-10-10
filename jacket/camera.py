@@ -1,4 +1,5 @@
 import logging
+import sys
 from pathlib import Path
 from types import TracebackType
 
@@ -14,17 +15,31 @@ class CameraError(RuntimeError):
     pass
 
 
+def capture_backend() -> int:
+    """The fastest OpenCV camera backend on this OS."""
+    if sys.platform.startswith("linux"):
+        return cv2.CAP_V4L2
+    if sys.platform == "win32":
+        return cv2.CAP_DSHOW  # opens fast and accepts MJPG
+    if sys.platform == "darwin":
+        return cv2.CAP_AVFOUNDATION
+    return cv2.CAP_ANY
+
+
 def list_cameras() -> dict[int, str]:
-    """Map V4L2 index to device name."""
+    """Map index to device name; only Linux exposes names."""
     cameras: dict[int, str] = {}
     for node in sorted(Path("/sys/class/video4linux").glob("video*")):
-        cameras[int(node.name.removeprefix("video"))] = (node / "name").read_text().strip()
+        cameras[int(node.name.removeprefix("video"))] = (node / "name").read_text(encoding="utf-8").strip()
     return cameras
 
 
 def find_camera_index(name_hint: str) -> int:
     """Lowest index whose name matches, else raise."""
     cameras = list_cameras()
+    if not cameras and not sys.platform.startswith("linux"):
+        logger.info("camera names are Linux-only; using index %d (or pass --camera N)", config.CAMERA_DEFAULT_INDEX)
+        return config.CAMERA_DEFAULT_INDEX
     for index, name in cameras.items():
         if name_hint.lower() in name.lower():
             return index
@@ -42,8 +57,7 @@ class Camera:
         self._capture: cv2.VideoCapture | None = None
 
     def __enter__(self) -> "Camera":
-        # V4L2 explicitly: auto-detect can pick a slower backend.
-        capture = cv2.VideoCapture(self._index, cv2.CAP_V4L2)
+        capture = cv2.VideoCapture(self._index, capture_backend())  # auto-detect can be slow
         if not capture.isOpened():
             raise CameraError(f"cannot open camera index {self._index}")
         capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*config.CAMERA_FOURCC))  # before size
@@ -56,7 +70,7 @@ class Camera:
         actual_w = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_h = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         actual_fourcc = int(capture.get(cv2.CAP_PROP_FOURCC)).to_bytes(4, "little").decode("ascii", "replace")
-        if actual_fourcc != config.CAMERA_FOURCC:
+        if actual_fourcc != config.CAMERA_FOURCC and sys.platform.startswith("linux"):
             logger.warning("camera gave %s, not %s; fps may be low", actual_fourcc, config.CAMERA_FOURCC)
         logger.info("camera %d opened at %dx%d %s", self._index, actual_w, actual_h, actual_fourcc)
         return self

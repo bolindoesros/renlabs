@@ -271,7 +271,7 @@ def make_source_factory(args: argparse.Namespace) -> SourceFactory:
 
 def close_on_signals(window: QWidget) -> None:
     """Ctrl+C and SIGTERM close the window."""
-    for signal_number in (signal.SIGINT, signal.SIGTERM):
+    for signal_number in (signal.SIGINT, getattr(signal, "SIGTERM", signal.SIGINT)):
         signal.signal(signal_number, lambda *_: window.close())
     tick = QTimer(window)
     tick.timeout.connect(lambda: None)

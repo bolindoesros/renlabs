@@ -10,7 +10,8 @@ import open_clip
 import torch
 
 from jacket import config
-from jacket.camera import find_camera_index
+from jacket.camera import capture_backend, find_camera_index
+from jacket.person_detector import resolve_device
 
 logger = logging.getLogger("check_env")
 
@@ -42,14 +43,15 @@ def check_package_imports() -> str:
 
 
 def check_torch_device() -> str:
-    if not torch.cuda.is_available():
-        return "cpu (CUDA not available)"
-    return f"cuda: {torch.cuda.get_device_name(0)}"
+    device = resolve_device(config.DEVICE)
+    if device == "cuda":
+        return f"cuda: {torch.cuda.get_device_name(0)}"
+    return device if device == "mps" else "cpu (no GPU found, slower)"
 
 
 def check_webcam() -> str:
     camera_index = find_camera_index(config.CAMERA_NAME_HINT)
-    capture = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
+    capture = cv2.VideoCapture(camera_index, capture_backend())
     if not capture.isOpened():
         raise RuntimeError(f"cannot open camera index {camera_index}")
     try:

@@ -72,7 +72,7 @@ def main() -> None:
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
     logging.getLogger("jacket").setLevel(logging.INFO)
     logging.getLogger("jacket.classifier").setLevel(logging.WARNING)
-    with open(WEB_DIR / "labels.csv", newline="") as handle:
+    with open(WEB_DIR / "labels.csv", newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     detector = PersonDetector(config.YOLO_WEIGHTS_PATH, config.YOLO_PERSON_CLASS_ID,
                               config.YOLO_MIN_CONFIDENCE, config.YOLO_IMAGE_SIZE, config.DEVICE)
@@ -81,7 +81,7 @@ def main() -> None:
         annotated_dir = WEB_DIR / "annotated" / model_key
         annotated_dir.mkdir(parents=True, exist_ok=True)
         outcomes = [score_image(row, detector, classifier, annotated_dir) for row in rows]
-        with open(WEB_DIR / f"results_{model_key}.csv", "w", newline="") as handle:
+        with open(WEB_DIR / f"results_{model_key}.csv", "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(vars(outcomes[0])))
             writer.writeheader()
             writer.writerows(vars(o) for o in outcomes)

@@ -116,9 +116,9 @@ def build_stylesheet() -> str:
     QComboBox:hover, QPushButton#viewButton:hover {{ background: {c['hover']}; }}
     QComboBox:disabled, QPushButton#viewButton:disabled {{ color: {c['muted']}; background: {c['page']}; }}
     QComboBox::drop-down {{ border: none; width: 34px; }}
-    QComboBox::down-arrow {{ image: url("{CHEVRON_FILE}"); width: 12px; height: 12px; }}
+    QComboBox::down-arrow {{ image: url("{CHEVRON_FILE.as_posix()}"); width: 12px; height: 12px; }}
     QPushButton#viewButton::menu-indicator {{
-        image: url("{CHEVRON_FILE}"); subcontrol-origin: padding; subcontrol-position: center right; right: 14px;
+        image: url("{CHEVRON_FILE.as_posix()}"); subcontrol-origin: padding; subcontrol-position: center right; right: 14px;
     }}
     QComboBox QAbstractItemView {{
         background: {c['background']}; border: 1px solid {c['hairline']}; border-radius: 14px;
@@ -134,7 +134,7 @@ def build_stylesheet() -> str:
     QMenu::item:selected {{ background: {c['hover']}; color: {c['text']}; }}
     QMenu::item:disabled {{ color: {c['muted']}; padding-top: 10px; }}
     QMenu::indicator {{ width: 14px; height: 14px; left: 14px; }}
-    QMenu::indicator:checked {{ image: url("{CHECK_FILE}"); }}
+    QMenu::indicator:checked {{ image: url("{CHECK_FILE.as_posix()}"); }}
     QMenu::separator {{ height: 1px; background: {c['hairline']}; margin: 6px 10px; }}
     QToolTip {{ background: #303134; color: #ffffff; border: none; border-radius: 6px; padding: 6px 10px; }}
     QScrollArea {{ border: none; background: transparent; }}

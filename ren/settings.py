@@ -196,7 +196,7 @@ def load_settings(path: Path = config.SETTINGS_FILE) -> AppSettings:
     if not path.exists():
         return AppSettings()
     try:
-        raw = json.loads(path.read_text())
+        raw = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             raise TypeError("expected an object at the top level")
         return sanitize(from_dict(AppSettings, migrate(raw)))
@@ -209,7 +209,7 @@ def save_settings(settings: AppSettings, path: Path = config.SETTINGS_FILE) -> N
     """Write atomically, so a crash leaves no half file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(dataclasses.asdict(settings), indent=2))
+    temporary.write_text(json.dumps(dataclasses.asdict(settings), indent=2), encoding="utf-8")
     temporary.replace(path)
 
 
