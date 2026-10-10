@@ -33,13 +33,13 @@ def test_every_view_item_is_a_real_setting_or_panel():
             assert item.is_panel or item.key in names, item.key
 
 
-def test_panel_items_are_exactly_the_two_panels():
-    assert [item.key for item in VIEW_SECTIONS["panels"]] == ["camera", "plan"]
+def test_panel_items_are_exactly_the_three_panels():
+    assert [item.key for item in VIEW_SECTIONS["panels"]] == ["camera", "plan", "crops"]
 
 
 def test_ticks_start_from_the_settings(fonts):
-    toolbar = Toolbar(fonts, "clip", ViewSettings(show_labels=False, show_crops=True), ["lt1"], "lt1")
-    assert not toolbar.action("show_labels").isChecked() and toolbar.action("show_crops").isChecked()
+    toolbar = Toolbar(fonts, "clip", ViewSettings(show_labels=False, show_torso_line=True), ["lt1"], "lt1")
+    assert not toolbar.action("show_labels").isChecked() and toolbar.action("show_torso_line").isChecked()
     assert toolbar.action("camera").isChecked() and toolbar.model() == "clip"
 
 

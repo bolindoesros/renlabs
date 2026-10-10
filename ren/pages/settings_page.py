@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
 
 from jacket import config
+from ren.seating_view import SeatingPlanView
 from ren.settings import AppSettings, add_venue, get_path, remove_venue, replace_path, select_venue
 from ren.theme import Fonts
 from ren.venue_list import VenueList
@@ -13,6 +14,7 @@ from ren.widgets import Card, Hairline, NavLink, SettingRow, Stepper, SwitchRow,
 
 RESET_ARMED_MS = 3000
 SECTION_WIDTH_PX = 620
+SEAT_MAP_HEIGHT_PX = 300
 NAV_WIDTH_PX = 200
 Path = tuple[str, ...]
 
@@ -42,6 +44,11 @@ class DropdownRow:
 
 
 @dataclass(frozen=True)
+class SeatMapRow:
+    hint: str
+
+
+@dataclass(frozen=True)
 class ActionRow:
     label: str
     button: str
@@ -55,12 +62,14 @@ SECTIONS: dict[str, list] = {
     "vision": [
         DropdownRow("model", ("view", "model_key"), tuple(config.CLIP_MODELS)),
         ToggleRow("human detection", ("view", "detect_people")),
+        DropdownRow("detector", ("view", "detector"), config.DETECTOR_MODES),
         ToggleRow("clothing detection", ("view", "classify_clothing")),
         ToggleRow("mirror camera", ("view", "mirror")),
     ],
     "seating plan": [
         StepperRow("rows", ("layout", "rows"), 1, 12, 1),
         StepperRow("seats per row", ("layout", "cols"), 1, 16, 1),
+        SeatMapRow("click a box to remove a seat (aisle, pillar, gap); click again to bring it back"),
         ActionRow("calibration", "edit"),
     ],
     "decision": [
@@ -174,6 +183,8 @@ class SettingsPage(QWidget):
             return self._stepper(row)
         if isinstance(row, DropdownRow):
             return self._dropdown(row)
+        if isinstance(row, SeatMapRow):
+            return self._seat_map(row)
         button = TextButton(row.button, self._fonts)
         button.clicked.connect(self.calibrate_requested)
         return SettingRow(row.label, button, self._fonts)
@@ -197,6 +208,31 @@ class SettingsPage(QWidget):
         box.textActivated.connect(lambda value: self._edit(row.path, value))
         self._refreshers.append(lambda s: self._quietly(box, lambda: box.setCurrentText(get_path(s, row.path))))
         return SettingRow(row.label, box, self._fonts)
+
+    def _seat_map(self, row: SeatMapRow) -> QWidget:
+        box = QWidget()
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 12, 0, 12)
+        hint = QLabel(row.hint)
+        hint.setWordWrap(True)
+        hint.setFont(self._fonts.text(config.UI_FONT_PX["small"]))
+        hint.setStyleSheet(f"color: {config.UI_COLORS['muted']};")
+        count = QLabel()
+        count.setFont(self._fonts.text(config.UI_FONT_PX["small"], "medium"))
+        view = SeatingPlanView(self._fonts, editable=True)
+        view.setFixedHeight(SEAT_MAP_HEIGHT_PX)
+        view.seat_toggled.connect(
+            lambda r, c: self._apply(replace_path(self._settings, ("layout",), self._settings.layout.with_seat_toggled(r, c)))
+        )
+
+        def refresh(settings: AppSettings) -> None:
+            view.set_state(settings.layout, None, None, [], settings.vent)
+            count.setText(f"{settings.layout.seat_count} seats")
+
+        self._refreshers.append(refresh)
+        for widget in (hint, view, count):
+            layout.addWidget(widget)
+        return box
 
     @staticmethod
     def _quietly(widget: QWidget, action: Callable[[], None]) -> None:

@@ -1,4 +1,4 @@
-"""Live page toolbar: venue, model and view dropdowns."""
+"""Live page toolbar: venue, detector, model and view dropdowns."""
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, Signal
@@ -9,6 +9,19 @@ from jacket import config
 from ren.engine import ViewSettings
 from ren.theme import Fonts
 from ren.widgets import IconButton, make_dropdown, round_popup
+
+
+DETECTOR_WIDTH_PX = 150  # fits "body + head"
+DETECTOR_PARTS = ("body", "head")
+
+
+def detector_mode(ticked: tuple[str, ...]) -> str:
+    """Ticked parts to a stored mode: both parts are "both"."""
+    return "both" if len(ticked) == len(DETECTOR_PARTS) else ticked[0]
+
+
+def detector_label(mode: str) -> str:
+    return " + ".join(DETECTOR_PARTS) if mode == "both" else mode
 
 
 @dataclass(frozen=True)
@@ -26,6 +39,7 @@ VIEW_SECTIONS: dict[str, tuple[ViewItem, ...]] = {
     "panels": (
         ViewItem("camera", "camera", is_panel=True),
         ViewItem("plan", "seating plan", is_panel=True),
+        ViewItem("crops", "torso crops", is_panel=True),
     ),
     "camera": (
         ViewItem("show_image", "picture"),
@@ -33,7 +47,6 @@ VIEW_SECTIONS: dict[str, tuple[ViewItem, ...]] = {
         ViewItem("show_labels", "labels"),
         ViewItem("show_torso_line", "shoulder line"),
         ViewItem("show_grid", "seat grid"),
-        ViewItem("show_crops", "torso crops"),
     ),
     "seating plan": (
         ViewItem("show_seats", "seats"),
@@ -59,6 +72,7 @@ class Toolbar(QWidget):
     venue_chosen = Signal(str)
     venue_add_requested = Signal()
     model_chosen = Signal(str)
+    detector_chosen = Signal(str)
     layer_toggled = Signal(str, bool)  # ViewSettings field, shown
     panel_toggled = Signal(str, bool)  # panel name, shown
 
@@ -74,7 +88,23 @@ class Toolbar(QWidget):
         self._add_venue = IconButton("add", "add a venue (copies this one)", fonts)
         self._add_venue.clicked.connect(self.venue_add_requested)
         self._model = make_dropdown(list(config.CLIP_MODELS), model_key)
+        self._model.setToolTip("clothing model")
         self._model.textActivated.connect(self.model_chosen)
+        self._detector = QPushButton()  # tick body, head, or both
+        self._detector.setObjectName("viewButton")
+        self._detector.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._detector.setFixedWidth(DETECTOR_WIDTH_PX)
+        self._detector.setToolTip("people detector. body: pose model, head: head model, both ticked: the two agree on each person")
+        detector_menu = StickyMenu(self._detector)
+        round_popup(detector_menu)
+        self._detector.setMenu(detector_menu)
+        self._detector_parts: dict[str, QAction] = {}
+        for part in DETECTOR_PARTS:
+            action = detector_menu.addAction(part)
+            action.setCheckable(True)
+            action.toggled.connect(self._on_detector_toggled)
+            self._detector_parts[part] = action
+        self.set_detector(view.detector)
         self._view_button = QPushButton("layers")  # QToolButton cannot left-align text
         self._view_button.setObjectName("viewButton")
         self._view_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -88,7 +118,7 @@ class Toolbar(QWidget):
         for widget in (self._caption("venue", fonts), self._venue, self._add_venue):
             layout.addWidget(widget)
         layout.addSpacing(20)
-        for widget in (self._caption("model", fonts), self._model):
+        for widget in (self._caption("models", fonts), self._detector, self._model):  # people, then clothing
             layout.addWidget(widget)
         layout.addSpacing(20)
         layout.addWidget(self._caption("view", fonts))
@@ -147,6 +177,25 @@ class Toolbar(QWidget):
         self._venue.setCurrentText(active)
         self._venue.blockSignals(False)
 
+    def detector(self) -> str:
+        return detector_mode(self._ticked_parts())
+
+    def set_detector(self, mode: str) -> None:
+        for part, action in self._detector_parts.items():
+            self._quietly(action, mode in (part, "both"))
+        self._detector_mode = mode
+        self._detector.setText(detector_label(mode))
+
+    def _ticked_parts(self) -> tuple[str, ...]:
+        return tuple(part for part, action in self._detector_parts.items() if action.isChecked())
+
+    def _on_detector_toggled(self) -> None:
+        if not self._ticked_parts():  # people need some detector; undo unticking the last one
+            self.set_detector(self._detector_mode)
+            return
+        self.set_detector(self.detector())
+        self.detector_chosen.emit(self._detector_mode)
+
     def set_model(self, model_key: str) -> None:
         self._model.blockSignals(True)
         self._model.setCurrentText(model_key)
@@ -158,6 +207,7 @@ class Toolbar(QWidget):
     def _sync_enabled(self, view: ViewSettings) -> None:
         """Clothing needs people; the model needs clothing detection."""
         self._actions["classify_clothing"].setEnabled(view.detect_people)
+        self._detector.setEnabled(view.detect_people)
         self._model.setEnabled(view.detect_people and view.classify_clothing)
 
     @staticmethod

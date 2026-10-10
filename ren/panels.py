@@ -100,13 +100,14 @@ class PanelArea(QWidget):
         super().__init__()
         self._fonts = fonts
         self._panels: dict[str, Panel] = {}
+        self._shares: list[int] = []
         self._hidden: set[str] = set()
         self._expanded: str | None = None
         self._splitter = Splitter(Qt.Orientation.Horizontal)
         self._splitter.setHandleWidth(HANDLE_PX)
         self._splitter.setStyleSheet("QSplitter { background: transparent; }")
         self._splitter.setChildrenCollapsible(False)
-        self._empty = QLabel("both panels are hidden, show one from view")
+        self._empty = QLabel("every panel is hidden, show one from view")
         self._empty.setFont(fonts.text(config.UI_FONT_PX["body"]))
         self._empty.setStyleSheet(f"color: {config.UI_COLORS['muted']};")
         self._empty.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
@@ -116,14 +117,16 @@ class PanelArea(QWidget):
         layout.addWidget(self._splitter, 1)
         layout.addWidget(self._empty, 1)
 
-    def add_panel(self, name: str, title: str, content: QWidget) -> Panel:
+    def add_panel(self, name: str, title: str, content: QWidget, share: int = 2) -> Panel:
+        """Panels split the width by share."""
         panel = Panel(title, content, self._fonts)
         panel.expand_clicked.connect(lambda: self.toggle_expanded(name))
         panel.hide_clicked.connect(lambda: self.set_visible(name, False))
         self._panels[name] = panel
         self._splitter.addWidget(panel)
-        self._splitter.setStretchFactor(self._splitter.count() - 1, 1)
-        self._splitter.setSizes([1000] * self._splitter.count())
+        self._splitter.setStretchFactor(self._splitter.count() - 1, share)
+        self._shares.append(share)
+        self._splitter.setSizes([500 * s for s in self._shares])
         return panel
 
     def dot(self, name: str):

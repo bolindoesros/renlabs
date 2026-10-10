@@ -13,20 +13,32 @@ SeatState = Literal["hot", "cold", "unsure"]
 LABEL_TO_STATE: dict[str, SeatState] = {"light": "hot", "warm": "cold", "unknown": "unsure"}
 
 Corner = tuple[float, float]
+Seat = tuple[int, int]  # (row, col)
 CORNER_NAMES = ("back_left", "back_right", "front_right", "front_left")
 PLAN_UV = np.float32([[0, 1], [1, 1], [1, 0], [0, 0]])  # corners in plan units
 
 
 @dataclass(frozen=True)
 class PlanLayout:
-    """Seats in the room. Row 0 is the front."""
+    """Seats in the room: a grid with some cells switched off. Row 0 is the front."""
 
     rows: int = config.PLAN_ROWS
     cols: int = config.PLAN_COLS
+    off: tuple[Seat, ...] = ()  # cells with no seat: aisles, pillars, gaps
+
+    def has_seat(self, row: int, col: int) -> bool:
+        return 0 <= row < self.rows and 0 <= col < self.cols and (row, col) not in self.off
+
+    def seats(self) -> list[Seat]:
+        return [(row, col) for row in range(self.rows) for col in range(self.cols) if self.has_seat(row, col)]
 
     @property
     def seat_count(self) -> int:
-        return self.rows * self.cols
+        return len(self.seats())
+
+    def with_seat_toggled(self, row: int, col: int) -> "PlanLayout":
+        """Remove a seat, or bring a removed one back."""
+        return replace(self, off=tuple(sorted(set(self.off) ^ {(row, col)})))
 
 
 @dataclass(frozen=True)
@@ -119,11 +131,10 @@ def read_scene(
 
     pairs = []
     for person, (u, v) in enumerate(plan_points):
-        for row in range(layout.rows):
-            for col in range(layout.cols):
-                distance = math.hypot(u * layout.cols - (col + 0.5), v * layout.rows - (row + 0.5))
-                if distance <= radius:
-                    pairs.append((distance, person, row, col))
+        for row, col in layout.seats():
+            distance = math.hypot(u * layout.cols - (col + 0.5), v * layout.rows - (row + 0.5))
+            if distance <= radius:
+                pairs.append((distance, person, row, col))
     pairs.sort()
 
     seats: dict[tuple[int, int], SeatReading] = {}

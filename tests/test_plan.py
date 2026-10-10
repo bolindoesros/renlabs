@@ -129,3 +129,15 @@ def test_grid_lines_run_between_the_calibration_corners():
     # Line 0 is the left edge, front to back
     assert first_vertical[0] == pytest.approx((100, 700), abs=0.1) and first_vertical[1] == pytest.approx((100, 100), abs=0.1)
     assert last_horizontal[0] == pytest.approx((100, 100), abs=0.1) and last_horizontal[1] == pytest.approx((900, 100), abs=0.1)
+
+
+def test_toggling_a_seat_removes_it_and_toggling_again_brings_it_back():
+    gap = LAYOUT.with_seat_toggled(1, 2)
+    assert not gap.has_seat(1, 2) and gap.seat_count == 17
+    assert gap.with_seat_toggled(1, 2) == LAYOUT
+
+
+def test_nobody_is_seated_in_a_removed_seat():
+    gap = LAYOUT.with_seat_toggled(1, 2)
+    scene = read_scene([person(*seat_pixel(1, 2))], [LIGHT], FRAME, gap, SQUARE)
+    assert (1, 2) not in scene.seats

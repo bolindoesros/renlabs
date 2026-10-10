@@ -56,7 +56,7 @@ def live_page(fonts, clock=None, **view_changes):
 
 
 def result(boxes, results) -> FrameResult:
-    return FrameResult(FRAME, boxes, results, None, "", "")
+    return FrameResult(FRAME, boxes, results, (), "", "")
 
 
 # ---- live page --------------------------------------------------------------------
@@ -284,6 +284,38 @@ def test_the_model_dropdown_announces_the_choice(fonts):
     assert announced[-1].view.model_key == "clip"
 
 
+def test_the_detector_dropdown_announces_the_choice(fonts):
+    page = SettingsPage(fonts, AppSettings())
+    announced = []
+    page.changed.connect(announced.append)
+    find(page, "vision", QComboBox)[1].textActivated.emit("both")
+    assert announced[-1].view.detector == "both"
+
+
+def test_the_toolbar_swaps_the_detector(fonts):
+    page, settings = live_page(fonts)
+    announced = []
+    page.changed.connect(announced.append)
+    parts = page._toolbar._detector_parts
+    parts["head"].trigger()  # tick head alongside body
+    assert announced[-1].view.detector == "both"
+    assert page._toolbar._detector.text() == "body + head"
+    parts["body"].trigger()  # untick body
+    assert announced[-1].view.detector == "head"
+    page.set_settings(replace(settings, view=replace(settings.view, detector="both")))
+    assert page._toolbar.detector() == "both"
+
+
+def test_the_last_detector_cannot_be_unticked(fonts):
+    page, _ = live_page(fonts)
+    announced = []
+    page.changed.connect(announced.append)
+    page._toolbar._detector_parts["body"].trigger()  # body is the only one ticked
+    assert page._toolbar._detector_parts["body"].isChecked()
+    assert page._toolbar.detector() == "body"
+    assert announced == []
+
+
 def test_a_toggle_announces_the_change(fonts):
     page = SettingsPage(fonts, AppSettings())
     announced = []
@@ -350,7 +382,7 @@ def test_done_finishes_and_reset_restores_the_default(fonts):
 
 def test_calibration_page_shows_people_where_the_shoulder_line_is(fonts):
     page = CalibrationPage(fonts, SQUARE, PlanLayout())
-    page.show_result(FrameResult(FRAME, [person(300, 400)], [], None, "", ""))
+    page.show_result(FrameResult(FRAME, [person(300, 400)], [], (), "", ""))
     assert page._view._people == [(300.0, 400.0)]
 
 
@@ -518,3 +550,28 @@ def test_switching_venue_on_the_live_page_rebuilds_the_plan(fonts):
     page.set_settings(select_venue(two, "lt1"))
     assert page._plan_panel._view._layout == settings.layout
     assert page._toolbar.venue() == "lt1"
+
+
+def test_clicking_the_seat_map_removes_and_restores_a_seat(fonts):
+    from ren.seating_view import SeatingPlanView
+    page = SettingsPage(fonts, AppSettings())
+    page.resize(1200, 900)
+    announced = []
+    page.changed.connect(announced.append)
+    seat_map = next(v for v in page.findChildren(SeatingPlanView) if v._editable)
+    seat_map.resize(600, 300)
+    target = seat_map.cell_rect(0, 1).center().toPoint()
+    QTest.mouseClick(seat_map, Qt.MouseButton.LeftButton, pos=target)
+    assert not announced[-1].layout.has_seat(0, 1)
+    QTest.mouseClick(seat_map, Qt.MouseButton.LeftButton, pos=target)
+    assert announced[-1].layout.has_seat(0, 1)
+
+
+def test_hiding_the_crops_panel_stops_cutting_crops(fonts):
+    page, _ = live_page(fonts, show_crops=True)
+    announced = []
+    page.changed.connect(announced.append)
+    page._toolbar.action("crops").trigger()
+    assert announced[-1].view.show_crops is False
+    page.set_settings(announced[-1])
+    assert not page._area.is_visible("crops")

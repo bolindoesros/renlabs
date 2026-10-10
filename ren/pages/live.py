@@ -1,4 +1,4 @@
-"""The demo page: toolbar, then both panels."""
+"""The demo page: toolbar, then the panels."""
 import logging
 import time
 from typing import Callable
@@ -15,10 +15,11 @@ from ren.plan_panel import PlanPanel, status_text
 from ren.settings import AppSettings, replace_path, select_venue
 from ren.theme import Fonts
 from ren.toolbar import Toolbar
+from ren.crops_view import CropsView
 from ren.video_view import VideoView
 
 logger = logging.getLogger("ren.live")
-PANELS = ("camera", "plan")
+PANELS = ("camera", "plan", "crops")
 
 
 class LivePage(QWidget):
@@ -38,9 +39,11 @@ class LivePage(QWidget):
 
         self._camera = VideoView(fonts)
         self._plan_panel = PlanPanel(fonts)
+        self._crops = CropsView(fonts)
         self._area = PanelArea(fonts)
         self._area.add_panel("camera", "camera", self._camera)
         self._area.add_panel("plan", "seating plan", self._plan_panel)
+        self._area.add_panel("crops", "torso crops", self._crops, share=1)
         self._toolbar = Toolbar(fonts, settings.view.model_key, settings.view, settings.venue_names(), settings.venue)
 
         pad = config.UI_PAGE_PADDING_PX
@@ -53,6 +56,7 @@ class LivePage(QWidget):
         self._toolbar.venue_chosen.connect(lambda name: self.changed.emit(select_venue(self._settings, name)))
         self._toolbar.venue_add_requested.connect(self.venue_add_requested)
         self._toolbar.model_chosen.connect(lambda key: self._edit(("view", "model_key"), key))
+        self._toolbar.detector_chosen.connect(lambda mode: self._edit(("view", "detector"), mode))
         self._toolbar.layer_toggled.connect(lambda key, shown: self._edit(("view", key), shown))
         self._toolbar.panel_toggled.connect(self._area.set_visible)
         self._area.changed.connect(self._sync_panels)
@@ -72,6 +76,7 @@ class LivePage(QWidget):
 
     def show_failure(self, message: str) -> None:
         self._camera.show_message(message)
+        self._crops.show_message("")
         self._seen_at.pop("camera", None)
         self._area.dot("camera").set_state("error")
 
@@ -92,7 +97,9 @@ class LivePage(QWidget):
         self._camera.set_layers(settings.view)
         self._toolbar.set_view(settings.view)
         self._toolbar.set_model(settings.view.model_key)
+        self._toolbar.set_detector(settings.view.detector)
         self._toolbar.set_venues(settings.venue_names(), settings.venue)
+        self._area.set_visible("crops", settings.view.show_crops)  # remembered between runs
         self._plan_panel.set_weights(settings.decision.weights)
         self._grid_cache = None
         if self._plan_error is not None:
@@ -121,6 +128,9 @@ class LivePage(QWidget):
             self._camera.set_grid(self._grid)
             self._camera.show_result(result)
             self._seen_at["camera"] = now
+        if self._area.is_shown("crops"):
+            self._crops.show_result(result)
+            self._seen_at["crops"] = now
         self.refresh_dots()
 
     # --- the plan stage ---------------------------------------------------------
@@ -161,3 +171,6 @@ class LivePage(QWidget):
     def _sync_panels(self) -> None:
         for name in PANELS:
             self._toolbar.set_panel_visible(name, self._area.is_visible(name))
+        crops_open = self._area.is_visible("crops")
+        if self._settings is not None and crops_open != self._settings.view.show_crops:
+            self._edit(("view", "show_crops"), crops_open)  # the engine only cuts crops while it is open

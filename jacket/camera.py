@@ -69,7 +69,8 @@ class Camera:
             self.read()  # discard dark startup frames
         actual_w = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         actual_h = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        actual_fourcc = int(capture.get(cv2.CAP_PROP_FOURCC)).to_bytes(4, "little").decode("ascii", "replace")
+        fourcc_code = int(capture.get(cv2.CAP_PROP_FOURCC)) & 0xFFFFFFFF  # AVFoundation reports it signed
+        actual_fourcc = fourcc_code.to_bytes(4, "little").decode("ascii", "replace")
         if actual_fourcc != config.CAMERA_FOURCC and sys.platform.startswith("linux"):
             logger.warning("camera gave %s, not %s; fps may be low", actual_fourcc, config.CAMERA_FOURCC)
         logger.info("camera %d opened at %dx%d %s", self._index, actual_w, actual_h, actual_fourcc)

@@ -107,6 +107,12 @@ def test_sanitize_repairs_a_bad_calibration_and_model():
     assert clean.calibration == Calibration() and clean.view.model_key == AppSettings().view.model_key
 
 
+def test_sanitize_repairs_an_unknown_detector():
+    clean = sanitize(AppSettings(view=replace(AppSettings().view, detector="eyes")))
+    assert clean.view.detector == "body"
+    assert sanitize(AppSettings(view=replace(AppSettings().view, detector="both"))).view.detector == "both"
+
+
 def test_sanitize_leaves_good_settings_alone():
     assert sanitize(AppSettings()) == AppSettings()
 
@@ -205,3 +211,15 @@ def test_sanitize_repairs_duplicate_names_and_a_missing_active_venue(caplog):
 
 def test_settings_with_no_venues_get_a_default_one():
     assert sanitize(AppSettings(venues=())).venue_names() == ["lt1"]
+
+
+def test_removed_seats_round_trip(tmp_path):
+    path = tmp_path / "settings.json"
+    settings = AppSettings(venues=(Venue("lt1", PlanLayout(3, 6, ((0, 2), (2, 5)))),))
+    save_settings(settings, path)
+    assert load_settings(path).layout.off == ((0, 2), (2, 5))
+
+
+def test_removed_seats_outside_the_grid_are_dropped():
+    settings = AppSettings(venues=(Venue("lt1", PlanLayout(2, 2, ((0, 1), (5, 5)))),))
+    assert sanitize(settings).layout.off == ((0, 1),)

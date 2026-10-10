@@ -64,7 +64,7 @@ def window(app, worker, saved) -> MainWindow:
 
 def frame_result(boxes=None, results=None) -> FrameResult:
     frame = np.full((450, 800, 3), 100, dtype=np.uint8)
-    return FrameResult(frame, boxes or [], results or [], None, "0", "")
+    return FrameResult(frame, boxes or [], results or [], (), "0", "")
 
 
 def test_starts_on_the_live_page(window):

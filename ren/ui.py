@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 from jacket import config  # noqa: E402
 from jacket.camera import Camera, find_camera_index  # noqa: E402
 from jacket.classifier import ClothingClassifier  # noqa: E402
-from jacket.person_detector import PersonDetector  # noqa: E402
+from jacket.detectors import build_detector  # noqa: E402
 from jacket.pipeline import ClothingPipeline  # noqa: E402
 from jacket.sources import FrameSource, ImageSource, VideoFileSource  # noqa: E402
 from ren.engine import FrameEngine, FrameResult, ViewSettings  # noqa: E402
@@ -70,6 +70,7 @@ class FrameWorker(QThread):
             with self._open_source() as source:
                 self._load_if_needed(self._settings)
                 previous = time.perf_counter()
+                warm_up_due = True
                 while not self._stop_requested:
                     frame = source.read()
                     settings = self._settings
@@ -78,15 +79,30 @@ class FrameWorker(QThread):
                     now = time.perf_counter()
                     self.frame_ready.emit(result, 1 / max(now - previous, 1e-6))
                     previous = now
+                    if warm_up_due:  # after the first frame, so the picture shows at once
+                        warm_up_due = False
+                        self._warm_up_detectors()
         except Exception as error:
             logger.exception("worker stopped")
             self.failed.emit(f"{type(error).__name__}: {error}")
 
     def _load_if_needed(self, settings: ViewSettings) -> None:
+        if settings.detect_people and not self._engine.detector_loaded(settings.detector):
+            self.status.emit(f"loading {settings.detector} detector...")
+            self._engine.load_detector(settings.detector)
+            self.status.emit("")
         if settings.detect_people and settings.classify_clothing and not self._engine.is_loaded(settings.model_key):
             self.status.emit(f"loading {settings.model_key} model...")
             self._engine.load(settings.model_key)
             self.status.emit("")
+
+    def _warm_up_detectors(self) -> None:
+        """Load every detector now, so swapping later is instant."""
+        for mode in config.DETECTOR_MODES:
+            try:
+                self._engine.load_detector(mode)
+            except Exception:  # the mode in use still works; this one loads (and fails loudly) when picked
+                logger.warning("could not preload the %s detector", mode, exc_info=True)
 
 
 class MainWindow(QWidget):
@@ -279,18 +295,16 @@ def close_on_signals(window: QWidget) -> None:
 
 
 def build_engine() -> FrameEngine:
-    detector = PersonDetector(
-        config.YOLO_WEIGHTS_PATH, config.YOLO_PERSON_CLASS_ID, config.YOLO_MIN_CONFIDENCE,
-        config.YOLO_IMAGE_SIZE, config.DEVICE,
-    )
+    """Cheap: models load in the worker."""
     return FrameEngine(
-        detector, lambda key: ClothingPipeline(ClothingClassifier(key, config.DEVICE).classify)
+        build_detector, lambda key: ClothingPipeline(ClothingClassifier(key, config.DEVICE).classify)
     )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=list(config.CLIP_MODELS), help="override the saved model")
+    parser.add_argument("--detector", choices=config.DETECTOR_MODES, help="override the saved detector")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--camera", type=int, help="camera index; default finds the C920 by name")
     source.add_argument("--video", type=Path, help="loop a recorded video instead of the camera")
@@ -308,6 +322,8 @@ def main() -> int:
     settings = load_settings()
     if args.model:
         settings = dataclasses.replace(settings, view=dataclasses.replace(settings.view, model_key=args.model))
+    if args.detector:
+        settings = dataclasses.replace(settings, view=dataclasses.replace(settings.view, detector=args.detector))
     worker = FrameWorker(make_source_factory(args), build_engine(), settings.view)
     window = MainWindow(worker, settings, fonts)
     close_on_signals(window)

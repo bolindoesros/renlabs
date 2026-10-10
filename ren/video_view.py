@@ -43,7 +43,6 @@ class VideoView(QWidget):
         self._fonts = fonts
         self._preferred_size = preferred_size
         self._image: QImage | None = None
-        self._strip: QImage | None = None  # torso crops, painted under the video
         self._boxes: list[Box] = []
         self._results: list[ClothingResult] = []
         self._message = "starting camera..."
@@ -61,12 +60,11 @@ class VideoView(QWidget):
 
     def show_result(self, result: FrameResult) -> None:
         self._image = to_qimage(result.frame)
-        self._strip = to_qimage(result.crop_strip) if result.crop_strip is not None else None
         self._boxes, self._results, self._message = result.boxes, result.results, ""
         self.update()
 
     def show_message(self, text: str) -> None:
-        self._image, self._strip, self._boxes, self._results, self._message = None, None, [], [], text
+        self._image, self._boxes, self._results, self._message = None, [], [], text
         self.update()
 
     def set_grid(self, lines: list[Line]) -> None:
@@ -101,10 +99,7 @@ class VideoView(QWidget):
             )
             return
 
-        area = QRectF(self.rect())
-        if self._strip is not None:
-            area.setHeight(max(area.height() - self._strip.height() - config.UI_CROP_GAP_PX, 1))
-        target = fit_rect(self._image.size(), area)
+        target = fit_rect(self._image.size(), QRectF(self.rect()))
         painter.setClipPath(rounded(target, config.UI_RADIUS["viewport"] - 4))  # soft photo corners
         if self._layers.show_image:
             painter.drawImage(target, self._image)
@@ -118,14 +113,6 @@ class VideoView(QWidget):
                 result = self._results[index] if self._results else None
                 self._paint_person(painter, box, result, target, scale, index in self._unseated)
         painter.setClipping(False)
-        if self._strip is not None:
-            self._paint_strip(painter, target)
-
-    def _paint_strip(self, painter: QPainter, target: QRectF) -> None:
-        """Crops sit under the video; long strips are cut."""
-        x, y = target.left(), target.bottom() + config.UI_CROP_GAP_PX
-        visible = min(self._strip.width(), self.width() - x)
-        painter.drawImage(QPointF(x, y), self._strip, QRectF(0, 0, visible, self._strip.height()))
 
     def _paint_grid(self, painter: QPainter, target: QRectF, scale: float) -> None:
         for (x1, y1), (x2, y2) in self._grid:

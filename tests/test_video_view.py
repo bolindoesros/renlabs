@@ -61,7 +61,7 @@ def test_box_is_drawn_at_the_scaled_position(fonts):
     view = VideoView(fonts)
     view.set_layers(ViewSettings(show_labels=False, show_torso_line=False))
     box = Box(20, 20, 60, 60, 0.9, "person")  # frame 100px shown at 200px -> scale 2
-    view.show_result(FrameResult(grey_frame(), [box], [ClothingResult("light", 0.1, "")], None, "1 of 1", ""))
+    view.show_result(FrameResult(grey_frame(), [box], [ClothingResult("light", 0.1, "")], (), "1 of 1", ""))
     image = render(view)
     left_edge = max(redness(image, 39, 80), redness(image, 40, 80))
     assert left_edge > 40  # hot red line at x = 40
@@ -72,7 +72,7 @@ def test_label_tag_is_drawn_above_the_box_in_the_label_colour(fonts):
     view = VideoView(fonts)
     view.set_layers(ViewSettings(show_labels=True, show_torso_line=False))
     box = Box(20, 40, 60, 80, 0.9, "person")
-    view.show_result(FrameResult(grey_frame(), [box], [ClothingResult("warm", 0.9, "")], None, "1 of 1", ""))
+    view.show_result(FrameResult(grey_frame(), [box], [ClothingResult("warm", 0.9, "")], (), "1 of 1", ""))
     image = render(view)
     expected = label_color("warm")
     pixel = image.pixelColor(43, 70)  # tag padding; box top at y = 80
@@ -83,7 +83,7 @@ def test_labels_off_leaves_no_tag(fonts):
     view = VideoView(fonts)
     view.set_layers(ViewSettings(show_labels=False, show_torso_line=False))
     box = Box(20, 40, 60, 80, 0.9, "person")
-    view.show_result(FrameResult(grey_frame(), [box], [ClothingResult("warm", 0.9, "")], None, "1 of 1", ""))
+    view.show_result(FrameResult(grey_frame(), [box], [ClothingResult("warm", 0.9, "")], (), "1 of 1", ""))
     assert abs(redness(render(view), 43, 70)) < 5
 
 
@@ -91,7 +91,7 @@ def test_tag_moves_inside_when_box_touches_the_top(fonts):
     view = VideoView(fonts)
     view.set_layers(ViewSettings(show_labels=True, show_torso_line=False))
     box = Box(20, 0, 60, 60, 0.9, "person")  # no room above
-    view.show_result(FrameResult(grey_frame(), [box], [ClothingResult("warm", 0.9, "")], None, "1 of 1", ""))
+    view.show_result(FrameResult(grey_frame(), [box], [ClothingResult("warm", 0.9, "")], (), "1 of 1", ""))
     expected = label_color("warm")
     pixel = render(view).pixelColor(44, 13)  # pill padding, left of the text
     assert (pixel.red(), pixel.green(), pixel.blue()) == (expected.red(), expected.green(), expected.blue())
@@ -101,23 +101,14 @@ def test_unclassified_person_gets_a_neutral_box(fonts):
     view = VideoView(fonts)
     view.set_layers(ViewSettings(show_labels=False, show_torso_line=False))
     box = Box(20, 20, 60, 60, 0.9, "person")
-    view.show_result(FrameResult(grey_frame(), [box], [], None, "1", "person detected"))
+    view.show_result(FrameResult(grey_frame(), [box], [], (), "1", "person detected"))
     image = render(view)
     assert min(image.pixelColor(40, 80).red(), image.pixelColor(39, 80).red()) < GREY - 30  # dark line
 
 
-def test_crop_strip_is_painted_under_the_video(fonts):
-    view = VideoView(fonts)
-    strip = np.full((20, 50, 3), (0, 0, 255), dtype=np.uint8)  # BGR red
-    view.show_result(FrameResult(grey_frame(), [], [], strip, "0", "no people in view"))
-    image = render(view, size=240)
-    below_video = image.pixelColor(10, 240 - 10)
-    assert redness(image, 10, 240 - 10) > 100 or below_video.red() > 200
-
-
 def test_message_replaces_the_picture(fonts):
     view = VideoView(fonts)
-    view.show_result(FrameResult(grey_frame(), [], [], None, "0", ""))
+    view.show_result(FrameResult(grey_frame(), [], [], (), "0", ""))
     view.show_message("no video")
     assert view.message() == "no video" and not render(view).isNull()
 
@@ -134,7 +125,7 @@ def test_tag_words_are_hot_cold_or_unsure():
 def test_grid_lines_are_painted_over_the_picture(fonts):
     view = VideoView(fonts)
     view.set_layers(ViewSettings(show_labels=False, show_torso_line=False))
-    view.show_result(FrameResult(grey_frame(), [], [], None, "0", ""))
+    view.show_result(FrameResult(grey_frame(), [], [], (), "0", ""))
     plain = render(view)
     view.set_grid([((0.0, 50.0), (100.0, 50.0))])  # a horizontal line across the frame
     gridded = render(view)
@@ -145,7 +136,7 @@ def one_person_view(fonts, layers: ViewSettings, results=None, unseated=()):
     view = VideoView(fonts)
     view.set_layers(layers)
     box = Box(20, 20, 60, 60, 0.9, "person")
-    view.show_result(FrameResult(grey_frame(), [box], results if results is not None else [ClothingResult("light", 0.1, "")], None, "", ""))
+    view.show_result(FrameResult(grey_frame(), [box], results if results is not None else [ClothingResult("light", 0.1, "")], (), "", ""))
     view.set_unseated(unseated)
     return view
 

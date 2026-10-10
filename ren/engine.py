@@ -1,35 +1,31 @@
 """Turns one frame into data for the screen."""
 import logging
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Callable
 
 import cv2
 import numpy as np
 
 from jacket import config
 from jacket.crop import crop_torso
-from jacket.overlay import build_crop_strip
+from jacket.detectors import BoxDetector, detect, parts_of
 from jacket.pipeline import ClothingPipeline, count_warm
-from jacket.types import Box, ClothingResult
+from jacket.types import Box, ClothingResult, CropResult
 
 logger = logging.getLogger("ren.engine")
-
-
-class BoxDetector(Protocol):
-    def detect(self, frame: np.ndarray) -> list[Box]: ...
 
 
 @dataclass(frozen=True)
 class ViewSettings:
     """What the user has switched on."""
 
-    # Engine reads the first five; painting reads the rest.
-    # Engine reads the first five; painting reads the rest.
+    # Engine reads the first six; painting reads the rest.
     detect_people: bool = True
     classify_clothing: bool = True
-    show_crops: bool = False
+    show_crops: bool = True  # follows the torso crops panel
     mirror: bool = False
     model_key: str = config.DEFAULT_CLIP_MODEL
+    detector: str = config.DEFAULT_DETECTOR  # body, head or both
     show_image: bool = True
     show_people: bool = True
     show_labels: bool = True
@@ -46,18 +42,28 @@ class FrameResult:
     frame: np.ndarray  # BGR, mirrored if asked, never drawn on
     boxes: list[Box]
     results: list[ClothingResult]  # one per box; empty when classification is off
-    crop_strip: np.ndarray | None  # None unless show_crops
+    crops: tuple[CropResult, ...]  # one per box when show_crops, else empty
     headline: str  # big text, e.g. "5 of 7"
     caption: str  # small text under it, e.g. "visible people warm"
 
 
 class FrameEngine:
     def __init__(
-        self, detector: BoxDetector, make_pipeline: Callable[[str], ClothingPipeline]
+        self, make_detector: Callable[[str], BoxDetector], make_pipeline: Callable[[str], ClothingPipeline]
     ) -> None:
-        self._detector = detector
+        self._make_detector = make_detector  # "body" or "head"
         self._make_pipeline = make_pipeline
+        self._detectors: dict[str, BoxDetector] = {}
         self._pipelines: dict[str, ClothingPipeline] = {}
+
+    def detector_loaded(self, mode: str) -> bool:
+        return all(part in self._detectors for part in parts_of(mode))
+
+    def load_detector(self, mode: str) -> None:
+        """Build each detector a mode needs once; slow."""
+        for part in parts_of(mode):
+            if part not in self._detectors:
+                self._detectors[part] = self._make_detector(part)
 
     def is_loaded(self, model_key: str) -> bool:
         return model_key in self._pipelines
@@ -70,18 +76,17 @@ class FrameEngine:
     def process(self, frame: np.ndarray, settings: ViewSettings) -> FrameResult:
         if settings.mirror:
             frame = cv2.flip(frame, 1)
-        boxes = self._detector.detect(frame) if settings.detect_people else []
+        boxes: list[Box] = []
+        if settings.detect_people:
+            self.load_detector(settings.detector)
+            boxes = detect(frame, self._detectors, settings.detector)
         results: list[ClothingResult] = []
         if boxes and settings.classify_clothing:
             self.load(settings.model_key)
             results = self._pipelines[settings.model_key].process(frame, boxes)
-        strip = None
-        if settings.show_crops and boxes:
-            crops = [crop_torso(frame, box) for box in boxes]
-            if any(crop.crop is not None for crop in crops):  # never show an empty placeholder
-                strip = build_crop_strip(crops, config.UI_CROP_STRIP_HEIGHT_PX)
+        crops = tuple(crop_torso(frame, box) for box in boxes) if settings.show_crops else ()
         headline, caption = self._headline(settings, boxes, results)
-        return FrameResult(frame, boxes, results, strip, headline, caption)
+        return FrameResult(frame, boxes, results, crops, headline, caption)
 
     @staticmethod
     def _headline(

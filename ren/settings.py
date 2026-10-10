@@ -125,9 +125,10 @@ def _clamp(value: float, low: float, high: float, name: str) -> float:
 
 
 def _sanitize_venue(venue: Venue) -> Venue:
-    layout = PlanLayout(
-        int(_clamp(venue.layout.rows, 1, 12, "rows")), int(_clamp(venue.layout.cols, 1, 16, "seats per row"))
-    )
+    rows = int(_clamp(venue.layout.rows, 1, 12, "rows"))
+    cols = int(_clamp(venue.layout.cols, 1, 16, "seats per row"))
+    off = tuple(sorted({(r, c) for r, c in venue.layout.off if 0 <= r < rows and 0 <= c < cols}))
+    layout = PlanLayout(rows, cols, off)
     calibration = venue.calibration
     if not calibration.is_valid():
         logger.warning("settings: %s calibration is not a proper quad, using the default", venue.name)
@@ -164,6 +165,9 @@ def sanitize(settings: AppSettings) -> AppSettings:
     if view.model_key not in config.CLIP_MODELS:
         logger.warning("settings: unknown model %r, using %s", view.model_key, config.DEFAULT_CLIP_MODEL)
         view = dataclasses.replace(view, model_key=config.DEFAULT_CLIP_MODEL)
+    if view.detector not in config.DETECTOR_MODES:
+        logger.warning("settings: unknown detector %r, using %s", view.detector, config.DEFAULT_DETECTOR)
+        view = dataclasses.replace(view, detector=config.DEFAULT_DETECTOR)
     weights = NeedWeights(*(_clamp(getattr(decision.weights, n), 0.0, 1.0, f"need {n}") for n in ("hot", "unsure", "cold")))
     aim_mode = decision.aim_mode if decision.aim_mode in ("sweep", "focus") else config.DECISION_AIM_MODE
     decision = dataclasses.replace(

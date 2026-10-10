@@ -43,7 +43,7 @@ def classifiers() -> dict[str, FakeClassifier]:
 
 @pytest.fixture
 def engine(detector, classifiers) -> FrameEngine:
-    return FrameEngine(detector, lambda key: ClothingPipeline(classifiers[key]))
+    return FrameEngine(lambda part: detector, lambda key: ClothingPipeline(classifiers[key]))
 
 
 def settings(**changes) -> ViewSettings:
@@ -70,19 +70,19 @@ def test_classification_off_detects_but_does_not_classify(engine, detector, clas
 
 def test_plural_caption_for_several_people(classifiers):
     boxes = [BOX, replace(BOX, x1=10, x2=150)]
-    engine = FrameEngine(FakeDetector(boxes), lambda key: ClothingPipeline(classifiers[key]))
+    engine = FrameEngine(lambda part: FakeDetector(boxes), lambda key: ClothingPipeline(classifiers[key]))
     assert engine.process(FRAME, settings(classify_clothing=False)).caption == "people detected"
 
 
 def test_nobody_in_view(classifiers):
-    engine = FrameEngine(FakeDetector([]), lambda key: ClothingPipeline(classifiers[key]))
+    engine = FrameEngine(lambda part: FakeDetector([]), lambda key: ClothingPipeline(classifiers[key]))
     result = engine.process(FRAME, settings())
     assert (result.headline, result.caption) == ("0", "no people in view")
 
 
 def test_nobody_classifiable_is_not_reported_as_zero_warm(classifiers):
     tiny = Box(300, 200, 330, 240, 0.9, "person", torso_top_y=210)  # crop too small -> unknown
-    engine = FrameEngine(FakeDetector([tiny]), lambda key: ClothingPipeline(classifiers[key]))
+    engine = FrameEngine(lambda part: FakeDetector([tiny]), lambda key: ClothingPipeline(classifiers[key]))
     result = engine.process(FRAME, settings())
     assert (result.headline, result.caption) == ("-", "no visible people classified")
 
@@ -101,16 +101,17 @@ def test_models_load_lazily_and_once(engine):
     assert engine.is_loaded("fashion") and not engine.is_loaded("clip")
 
 
-def test_crop_strip_only_when_requested(engine):
-    assert engine.process(FRAME, settings()).crop_strip is None
-    assert engine.process(FRAME, settings(show_crops=True)).crop_strip is not None
+def test_crops_only_while_the_panel_is_open(engine):
+    assert engine.process(FRAME, settings(show_crops=False)).crops == ()
+    result = engine.process(FRAME, settings(show_crops=True))
+    assert len(result.crops) == len(result.boxes) and result.crops[0].crop is not None
 
 
-def test_no_crop_strip_without_usable_crops(classifiers):
+def test_an_unusable_crop_says_why(classifiers):
     tiny = Box(300, 200, 330, 240, 0.9, "person", torso_top_y=210)  # crop too small
-    for boxes in ([], [tiny]):
-        engine = FrameEngine(FakeDetector(boxes), lambda key: ClothingPipeline(classifiers[key]))
-        assert engine.process(FRAME, settings(show_crops=True)).crop_strip is None
+    engine = FrameEngine(lambda part: FakeDetector([tiny]), lambda key: ClothingPipeline(classifiers[key]))
+    (crop,) = engine.process(FRAME, settings(show_crops=True)).crops
+    assert crop.crop is None and crop.reason
 
 
 def test_the_frame_comes_back_undrawn(engine):
@@ -125,3 +126,27 @@ def test_mirror_flips_the_frame(engine):
     plain = engine.process(frame, settings(detect_people=False, mirror=False)).frame
     mirrored = engine.process(frame, settings(detect_people=False, mirror=True)).frame
     assert plain[0, 0, 0] == 255 and mirrored[0, -1, 0] == 255
+
+
+def test_detector_modes_load_lazily_and_swap(classifiers):
+    body, head = FakeDetector([BOX]), FakeDetector([Box(260, 90, 340, 170, 0.8, "head", torso_top_y=170)])
+    built = []
+
+    def make(part):
+        built.append(part)
+        return {"body": body, "head": head}[part]
+
+    engine = FrameEngine(make, lambda key: ClothingPipeline(classifiers[key]))
+    assert engine.process(FRAME, settings(detector="head")).boxes[0].kind == "head"
+    assert built == ["head"] and not engine.detector_loaded("both")
+    fused = engine.process(FRAME, settings(detector="both")).boxes
+    assert built == ["head", "body"] and len(fused) == 1 and fused[0].kind == "person"
+    engine.process(FRAME, settings(detector="body"))
+    assert built == ["head", "body"] and body.calls == 2 and head.calls == 2
+
+
+def test_detection_off_loads_no_detector(classifiers):
+    built = []
+    engine = FrameEngine(lambda part: built.append(part) or FakeDetector(), lambda key: ClothingPipeline(classifiers[key]))
+    engine.process(FRAME, settings(detect_people=False))
+    assert built == []

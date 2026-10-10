@@ -1,7 +1,7 @@
 """The seating plan, zones and vent aim."""
 import math
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
@@ -17,6 +17,7 @@ BEAM_ALPHA = (45, 130)  # at the vent, at the landing spot
 SEAT_DOT = 0.60  # occupied seat diameter, in cells
 EMPTY_DOT = 0.14  # empty seats are small grey dots
 ZONE_RADIUS_PX = 16
+EDIT_CELL_INSET = 0.12  # gap around each seat box when editing, in cells
 SHUT_TILT_DEG = config.VENT_CLOSED_TILT_DEG - 5  # beyond this the flaps count as shut
 BLADE_COUNT = 8  # the grille has eight blades
 
@@ -31,9 +32,14 @@ def air_line() -> QColor:
 
 
 class SeatingPlanView(QWidget):
-    def __init__(self, fonts: Fonts) -> None:
+    seat_toggled = Signal(int, int)  # row, col; only when editable
+
+    def __init__(self, fonts: Fonts, editable: bool = False) -> None:
         super().__init__()
         self._fonts = fonts
+        self._editable = editable
+        if editable:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._layout = PlanLayout()
         self._scene: SeatingScene | None = None
         self._decision: Decision | None = None
@@ -69,6 +75,23 @@ class SeatingPlanView(QWidget):
         cell = plan.width() / self._layout.cols
         return QRectF(plan.left() + col * cell, plan.bottom() - (row + 1) * cell, cell, cell)
 
+    def seat_at(self, point: QPointF) -> tuple[int, int] | None:
+        """The grid cell under a widget point, seat or not."""
+        plan = self.plan_rect()
+        if not plan.contains(point):
+            return None
+        cell = plan.width() / self._layout.cols
+        col = min(int((point.x() - plan.left()) / cell), self._layout.cols - 1)
+        row = min(int((plan.bottom() - point.y()) / cell), self._layout.rows - 1)
+        return row, col
+
+    def mousePressEvent(self, event) -> None:
+        seat = self.seat_at(event.position()) if self._editable else None
+        if seat is None:
+            super().mousePressEvent(event)
+            return
+        self.seat_toggled.emit(*seat)
+
     def point_at(self, u: float, v: float) -> QPointF:
         plan = self.plan_rect()
         return QPointF(plan.left() + u * plan.width(), plan.bottom() - v * plan.height())
@@ -79,6 +102,10 @@ class SeatingPlanView(QWidget):
         painter = QPainter(self)
         painter.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
         painter.fillRect(self.rect(), color("background"))
+        if self._editable:
+            self._paint_editor(painter)
+            self._paint_edges(painter)
+            return
         if self._layers.show_zones:
             self._paint_zones(painter)  # tints sit under the seats
         if self._layers.show_seats:
@@ -91,17 +118,32 @@ class SeatingPlanView(QWidget):
 
     def _paint_seats(self, painter: QPainter) -> None:
         painter.setPen(Qt.PenStyle.NoPen)
+        for row, col in self._layout.seats():
+            cell = self.cell_rect(row, col)
+            reading = self._scene.seats.get((row, col)) if self._scene else None
+            if reading is None:
+                painter.setBrush(empty_seat_color())
+                radius = cell.width() * EMPTY_DOT / 2
+            else:
+                painter.setBrush(state_color(reading.state))
+                radius = cell.width() * SEAT_DOT / 2
+            painter.drawEllipse(cell.center(), radius, radius)
+
+    def _paint_editor(self, painter: QPainter) -> None:
+        """Every cell as a box: filled seats, dashed gaps."""
         for row in range(self._layout.rows):
             for col in range(self._layout.cols):
                 cell = self.cell_rect(row, col)
-                reading = self._scene.seats.get((row, col)) if self._scene else None
-                if reading is None:
+                inset = cell.width() * EDIT_CELL_INSET
+                box = cell.adjusted(inset, inset, -inset, -inset)
+                corner = box.width() * 0.2
+                if self._layout.has_seat(row, col):
+                    painter.setPen(QPen(color("label"), 1.2))
                     painter.setBrush(empty_seat_color())
-                    radius = cell.width() * EMPTY_DOT / 2
                 else:
-                    painter.setBrush(state_color(reading.state))
-                    radius = cell.width() * SEAT_DOT / 2
-                painter.drawEllipse(cell.center(), radius, radius)
+                    painter.setPen(QPen(color("hairline").darker(130), 1.0, Qt.PenStyle.DashLine))
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRoundedRect(box, corner, corner)
 
     def _zone_rect(self, zone: Zone) -> QRectF:
         rects = [self.cell_rect(row, col) for row, col in zone.seats()]

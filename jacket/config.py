@@ -46,6 +46,21 @@ YOLO_MIN_CONFIDENCE = 0.35
 YOLO_IMAGE_SIZE = 640
 DEVICE = "auto"  # cuda, then Apple mps, then cpu
 
+# Head detector: YOLOv8n trained on SCUT-HEAD (github.com/Abcfsa/YOLOv8_head_detector)
+HEAD_WEIGHTS_PATH = WEIGHTS_DIR / "yolov8n-head.pt"
+HEAD_WEIGHTS_URL = (
+    "https://github.com/Abcfsa/YOLOv8_head_detector/raw/69559cef0a02adc4977f7bb4af6d11278819f332/nano.pt"
+)
+HEAD_WEIGHTS_SHA256 = "dc4f4a2b2e37a65a2524a305dc60de172c23cef6d05551b7a7c6905fd2f14f4b"
+HEAD_MIN_CONFIDENCE = 0.35
+HEAD_IMAGE_SIZE = 640
+
+# Which detector finds people; "both" fuses body and head boxes
+DETECTOR_MODES = ("body", "head", "both")
+DEFAULT_DETECTOR = "body"
+FUSE_HEAD_TOP_FRACTION = 0.45  # a head belongs to a body if its centre is in this top share
+FUSE_HEAD_SIDE_MARGIN = 0.1  # in body widths; heads may poke out a little
+
 # Debug window
 DEBUG_WINDOW_NAME = "smart-vent debug"
 DEBUG_QUIT_KEY = "q"
@@ -136,8 +151,6 @@ UI_ROW_HEIGHT_PX = 56
 UI_BOX_LINE_PX = 2.0
 UI_BOX_HALO_PX = 4.5  # white halo, visible on dark footage
 UI_TAG_PADDING_PX = (8, 3)  # horizontal, vertical
-UI_CROP_STRIP_HEIGHT_PX = 88
-UI_CROP_GAP_PX = 14  # between the video and the crop strip
 UI_LIVE_TIMEOUT_S = 1.5  # a panel's dot greys out after this
 
 # Seating plan, back row at the top

@@ -11,6 +11,10 @@
     python -m jacket.fashion
     python -m jacket.clip
 
+    < people detector: body (pose), head, or both fused >
+    python -m ren.ui --detector both
+    python -m jacket.fashion --detector head
+
     < crops >
     python -m jacket.fashion --save-crops
 

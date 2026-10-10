@@ -13,7 +13,7 @@ from jacket import config
 from jacket.camera import Camera, find_camera_index
 from jacket.classifier import ClothingClassifier
 from jacket.crop import crop_torso
-from jacket.person_detector import PersonDetector
+from jacket.detectors import build_detector, detect, parts_of
 from jacket.overlay import build_crop_strip, draw_box, group_text
 from jacket.pipeline import ClothingPipeline
 from jacket.types import ClothingResult, CropResult
@@ -64,14 +64,8 @@ def draw_status(frame: np.ndarray, results: list[ClothingResult], fps: float) ->
         )
 
 
-def run(model_key: str, save_crops: bool, camera_index: int | None) -> None:
-    detector = PersonDetector(
-        config.YOLO_WEIGHTS_PATH,
-        config.YOLO_PERSON_CLASS_ID,
-        config.YOLO_MIN_CONFIDENCE,
-        config.YOLO_IMAGE_SIZE,
-        config.DEVICE,
-    )
+def run(model_key: str, save_crops: bool, camera_index: int | None, detector_mode: str) -> None:
+    detectors = {part: build_detector(part) for part in parts_of(detector_mode)}
     pipeline = ClothingPipeline(ClothingClassifier(model_key, config.DEVICE).classify)
     saver = None
     if save_crops:
@@ -88,7 +82,7 @@ def run(model_key: str, save_crops: bool, camera_index: int | None) -> None:
         previous_time = time.perf_counter()
         while True:
             frame = camera.read()
-            boxes = detector.detect(frame)
+            boxes = detect(frame, detectors, detector_mode)
             results = pipeline.process(frame, boxes)
             now = time.perf_counter()
             fps = 1.0 / (now - previous_time)
@@ -120,11 +114,12 @@ def main(default_model: str = config.DEFAULT_CLIP_MODEL) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", choices=list(config.CLIP_MODELS), default=default_model)
     parser.add_argument("--camera", type=int, help="camera index; default finds the C920 by name")
+    parser.add_argument("--detector", choices=config.DETECTOR_MODES, default=config.DEFAULT_DETECTOR)
     parser.add_argument("--save-crops", action="store_true", help="write crops to data/raw/")
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("jacket").setLevel(logging.INFO)  # keep library logs quiet
-    run(args.model, args.save_crops, args.camera)
+    run(args.model, args.save_crops, args.camera, args.detector)
 
 
 if __name__ == "__main__":
